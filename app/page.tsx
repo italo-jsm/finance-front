@@ -1,65 +1,283 @@
-import Image from "next/image";
+"use client";
+
+import { FormEvent, useState } from "react";
+import { useAuth } from "@/components/AuthProvider";
+import { AccountForm } from "@/components/AccountForm";
+import type { Expense } from "@/types/expense";
+import type { MenuItem } from "@/types/menu";
+import { emptyAccountForm, type AccountFormValues } from "@/types/account";
+import { useExpenses } from "@/hooks/useExpenses";
+import { Sidebar } from "@/components/Sidebar";
+import { Header } from "@/components/Header";
+import { ExpenseForm } from "@/components/ExpenseForm";
+import { ExpenseList } from "@/components/ExpenseList";
+
+const emptyExpense: Expense = {
+  date: "",
+  description: "",
+  value: 0,
+  paymentMethod: "",
+};
+
+const accountsEndpoint =
+  process.env.NODE_ENV === "development"
+    ? "/api/accounts"
+    : "https://finance.italomariano.dev.br/accounts";
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+  const { status, error, login, configured, profile, tokenParsed, getAccessToken } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeMenu, setActiveMenu] = useState<MenuItem>("overview");
+  const [expense, setExpense] = useState<Expense>(emptyExpense);
+  const [isEditingIndex, setIsEditingIndex] = useState<number | null>(null);
+  const [account, setAccount] = useState<AccountFormValues>(emptyAccountForm);
+  const [isSubmittingAccount, setIsSubmittingAccount] = useState(false);
+  const [accountSubmitError, setAccountSubmitError] = useState("");
+  const [accountSubmitSuccess, setAccountSubmitSuccess] = useState("");
+
+  const { expenses, addExpense, updateExpense, deleteExpense } = useExpenses();
+
+  const resetForm = () => {
+    setExpense(emptyExpense);
+    setIsEditingIndex(null);
+  };
+
+  const validateExpense = (item: Expense) => {
+    if (!item.date) return "Escolha a data da despesa.";
+    if (!item.description.trim() || item.description.trim().length < 3) return "Descrição precisa ter ao menos 3 caracteres.";
+    if (!(item.value > 0)) return "Valor precisa ser maior que zero.";
+    if (!item.paymentMethod) return "Escolha uma forma de pagamento.";
+    return "";
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const error = validateExpense(expense);
+    if (error) {
+      alert(error);
+      return;
+    }
+
+    if (isEditingIndex !== null) {
+      updateExpense(isEditingIndex, expense);
+      resetForm();
+      return;
+    }
+
+    addExpense(expense);
+    resetForm();
+  };
+
+  const handleEdit = (index: number) => {
+    const current = expenses[index];
+    setExpense(current);
+    setIsEditingIndex(index);
+    setActiveMenu("transactions");
+  };
+
+  const handleDelete = (index: number) => {
+    if (!window.confirm("Remover esta despesa?")) return;
+    deleteExpense(index);
+    if (isEditingIndex === index) {
+      resetForm();
+    }
+  };
+
+  const validateDay = (value: string, fieldLabel: string) => {
+    const parsedValue = Number(value);
+    if (!Number.isInteger(parsedValue) || parsedValue < 1 || parsedValue > 31) {
+      return `${fieldLabel} precisa estar entre 1 e 31.`;
+    }
+
+    return "";
+  };
+
+  const validateAccount = (item: AccountFormValues) => {
+    if (!item.name.trim() || item.name.trim().length < 3) {
+      return "Nome da conta precisa ter ao menos 3 caracteres.";
+    }
+
+    if (item.accountType === "CREDIT_CARD") {
+      const closingDayError = validateDay(item.closingDay, "Dia do fechamento");
+      if (closingDayError) return closingDayError;
+
+      const dueDayError = validateDay(item.dueDay, "Dia do vencimento");
+      if (dueDayError) return dueDayError;
+    }
+
+    if (item.accountType === "FIXED_BILL") {
+      const dueDayError = validateDay(item.dueDay, "Dia do vencimento");
+      if (dueDayError) return dueDayError;
+    }
+
+    return "";
+  };
+
+  const handleAccountSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setAccountSubmitError("");
+    setAccountSubmitSuccess("");
+
+    const validationError = validateAccount(account);
+    if (validationError) {
+      setAccountSubmitError(validationError);
+      return;
+    }
+
+    setIsSubmittingAccount(true);
+
+    try {
+      const accessToken = await getAccessToken();
+
+      const response = await fetch(accountsEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          name: account.name.trim(),
+          accountType: account.accountType,
+          closingDay: account.accountType === "CREDIT_CARD" ? Number(account.closingDay) : null,
+          dueDay:
+            account.accountType === "CREDIT_CARD" || account.accountType === "FIXED_BILL"
+              ? Number(account.dueDay)
+              : null,
+        }),
+      });
+
+      if (!response.ok) {
+        const responseText = await response.text();
+        throw new Error(responseText || "Nao foi possivel salvar a conta.");
+      }
+
+      setAccount(emptyAccountForm);
+      setAccountSubmitSuccess("Conta salva com sucesso.");
+    } catch (submitError) {
+      setAccountSubmitError(
+        submitError instanceof Error ? submitError.message : "Ocorreu um erro ao salvar a conta.",
+      );
+    } finally {
+      setIsSubmittingAccount(false);
+    }
+  };
+
+  const userName =
+    profile?.firstName ||
+    profile?.username ||
+    tokenParsed?.preferred_username ||
+    tokenParsed?.name ||
+    "usuário";
+
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
+        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur">
+          <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Finance Front</p>
+          <h1 className="mt-4 text-3xl font-semibold">Validando sua sessão</h1>
+          <p className="mt-3 text-sm text-slate-300">Estamos conferindo se você já tem uma autenticação ativa no Keycloak.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "unauthenticated" || status === "error") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#164e63,_#0f172a_42%,_#020617_100%)] px-4 py-10 text-white">
+        <div className="w-full max-w-lg rounded-[2rem] border border-white/10 bg-slate-950/70 p-8 shadow-2xl backdrop-blur">
+          <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Finance Front</p>
+          <h1 className="mt-4 text-4xl font-semibold leading-tight">Acesse seu painel com Keycloak</h1>
+          <p className="mt-4 text-sm leading-6 text-slate-300">
+            O dashboard agora exige autenticacao centralizada. Entre com sua conta para visualizar e gerenciar suas despesas.
+          </p>
+          <div className="mt-6 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4 text-sm text-cyan-50">
+            {status === "error"
+              ? error
+              : "Use o mesmo usuario provisionado no realm configurado para esta aplicacao."}
+          </div>
+          <button
+            onClick={() => void login()}
+            disabled={!configured}
+            className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
+          >
+            Entrar com Keycloak
+          </button>
+          <p className="mt-4 text-xs text-slate-400">
+            Configure as variaveis em <code>.env.local</code> usando o arquivo <code>.env.example</code>.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+    );
+  }
+
+  const renderContent = () => {
+    if (activeMenu === "transactions") {
+      return (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <h2 className="text-2xl font-bold mb-4">{isEditingIndex !== null ? "Editar despesa" : "Cadastrar despesa"}</h2>
+          <ExpenseForm
+            expense={expense}
+            setExpense={setExpense}
+            isEditing={isEditingIndex !== null}
+            onSubmit={handleSubmit}
+            onCancel={resetForm}
+          />
+          <ExpenseList expenses={expenses} onEdit={handleEdit} onDelete={handleDelete} />
         </div>
-      </main>
+      );
+    }
+
+    if (activeMenu === "reports") {
+      return (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <h2 className="text-2xl font-bold">Relatórios</h2>
+          <p className="mt-2 text-slate-600 dark:text-slate-300">Em breve teremos dados de relatórios aqui.</p>
+        </div>
+      );
+    }
+
+    if (activeMenu === "accounts") {
+      return (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <h2 className="mb-4 text-2xl font-bold">Cadastrar conta</h2>
+          <AccountForm
+            account={account}
+            setAccount={setAccount}
+            isSubmitting={isSubmittingAccount}
+            submitError={accountSubmitError}
+            submitSuccess={accountSubmitSuccess}
+            onSubmit={handleAccountSubmit}
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <h2 className="text-2xl font-bold">Bem-vindo ao seu painel, {userName}</h2>
+        <p className="mt-2 text-slate-600 dark:text-slate-300">
+          Sua sessao com Keycloak esta ativa. O menu lateral continua responsivo, com botao de toggle para esconder e exibir em telas pequenas.
+        </p>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <div className="mx-auto flex max-w-screen-xl">
+        <Sidebar
+          activeMenu={activeMenu}
+          setActiveMenu={setActiveMenu}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+        />
+
+        <div className="flex flex-1 flex-col sm:ml-64">
+          <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeMenu={activeMenu} />
+
+          <main className="p-4 sm:p-6">{renderContent()}</main>
+        </div>
+      </div>
     </div>
   );
 }

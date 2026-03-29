@@ -1,5 +1,24 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Keycloak
+
+Para habilitar login com Keycloak, crie um `.env.local` a partir de `.env.example`:
+
+```bash
+cp .env.example .env.local
+```
+
+Preencha:
+
+- `NEXT_PUBLIC_KEYCLOAK_URL`
+- `NEXT_PUBLIC_KEYCLOAK_REALM`
+- `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID`
+
+No cliente do Keycloak, libere pelo menos:
+
+- `Valid redirect URIs`: `http://localhost:3000/*`
+- `Web origins`: `http://localhost:3000`
+
 ## Getting Started
 
 First, run the development server:
