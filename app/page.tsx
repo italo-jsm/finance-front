@@ -11,6 +11,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ExpenseList } from "@/components/ExpenseList";
+import { accountsApiUrl } from "@/lib/config";
 
 const emptyExpense: Expense = {
   date: "",
@@ -18,11 +19,6 @@ const emptyExpense: Expense = {
   value: 0,
   paymentMethod: "",
 };
-
-const accountsEndpoint =
-  process.env.NODE_ENV === "development"
-    ? "/api/accounts"
-    : "https://finance.italomariano.dev.br/accounts";
 
 export default function Home() {
   const { status, error, login, configured, profile, tokenParsed, getAccessToken } = useAuth();
@@ -129,7 +125,7 @@ export default function Home() {
     try {
       const accessToken = await getAccessToken();
 
-      const response = await fetch(accountsEndpoint, {
+      const response = await fetch(accountsApiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
