@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: finance-front
-          image: finance-front:latest
+          image: ghcr.io/italo-jsm/finance-front:sha-a6b3b46
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
