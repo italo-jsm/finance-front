@@ -6,3 +6,8 @@ npm-debug.log*
 Dockerfile
 README.md
 .DS_Store
+.env
+.env.*
+!.env.example
+CLAUDE.md
+AGENTS.md
