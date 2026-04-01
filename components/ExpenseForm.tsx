@@ -1,16 +1,31 @@
 "use client";
 
 import { Expense } from "../types/expense";
+import { AccountSummary } from "../types/account";
 
 type ExpenseFormProps = {
   expense: Expense;
   setExpense: (value: Expense) => void;
   isEditing: boolean;
+  accounts: AccountSummary[];
+  isLoadingAccounts: boolean;
+  accountsError: string;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
 };
 
-export function ExpenseForm({ expense, setExpense, isEditing, onSubmit, onCancel }: ExpenseFormProps) {
+export function ExpenseForm({
+  expense,
+  setExpense,
+  isEditing,
+  accounts,
+  isLoadingAccounts,
+  accountsError,
+  onSubmit,
+  onCancel,
+}: ExpenseFormProps) {
+  const hasCurrentSelection = accounts.some((account) => account.name === expense.paymentMethod);
+
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <div>
@@ -57,21 +72,33 @@ export function ExpenseForm({ expense, setExpense, isEditing, onSubmit, onCancel
 
       <div>
         <label htmlFor="paymentMethod" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Forma de pagamento
+          Conta
         </label>
         <select
           id="paymentMethod"
           value={expense.paymentMethod}
           onChange={(e) => setExpense({ ...expense, paymentMethod: e.target.value })}
+          disabled={isLoadingAccounts || accounts.length === 0}
           className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
         >
-          <option value="">Selecione</option>
-          <option value="Dinheiro">Dinheiro</option>
-          <option value="Cartão de crédito">Cartão de crédito</option>
-          <option value="Cartão de débito">Cartão de débito</option>
-          <option value="PIX">PIX</option>
-          <option value="Outro">Outro</option>
+          <option value="">
+            {isLoadingAccounts ? "Carregando contas..." : accounts.length ? "Selecione uma conta" : "Nenhuma conta disponivel"}
+          </option>
+          {!hasCurrentSelection && expense.paymentMethod && (
+            <option value={expense.paymentMethod}>{expense.paymentMethod}</option>
+          )}
+          {accounts.map((account) => (
+            <option key={account.accountId} value={account.name}>
+              {account.name}
+            </option>
+          ))}
         </select>
+        {accountsError && <p className="mt-2 text-sm text-red-600 dark:text-red-300">{accountsError}</p>}
+        {!accountsError && !isLoadingAccounts && accounts.length === 0 && (
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            Cadastre ao menos uma conta para vincular a despesa.
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-2">

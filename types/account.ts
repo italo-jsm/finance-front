@@ -1,5 +1,11 @@
 export type AccountType = "CREDIT_CARD" | "CHECKING_ACCOUNT" | "FIXED_BILL";
 
+export type AccountSummary = {
+  accountId: string;
+  name: string;
+  accountType: AccountType;
+};
+
 export type AccountTypeOption = {
   value: AccountType;
   label: string;

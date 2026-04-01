@@ -1,11 +1,11 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { AccountForm } from "@/components/AccountForm";
 import type { Expense } from "@/types/expense";
 import type { MenuItem } from "@/types/menu";
-import { emptyAccountForm, type AccountFormValues } from "@/types/account";
+import { emptyAccountForm, type AccountFormValues, type AccountSummary } from "@/types/account";
 import { useExpenses } from "@/hooks/useExpenses";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
@@ -30,8 +30,66 @@ export default function Home() {
   const [isSubmittingAccount, setIsSubmittingAccount] = useState(false);
   const [accountSubmitError, setAccountSubmitError] = useState("");
   const [accountSubmitSuccess, setAccountSubmitSuccess] = useState("");
+  const [accounts, setAccounts] = useState<AccountSummary[]>([]);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
+  const [accountsError, setAccountsError] = useState("");
 
   const { expenses, addExpense, updateExpense, deleteExpense } = useExpenses();
+
+  async function fetchAccounts(accessToken: string) {
+    setIsLoadingAccounts(true);
+    setAccountsError("");
+
+    const response = await fetch(accountsApiUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new Error(responseText || "Nao foi possivel carregar as contas.");
+    }
+
+    const data = (await response.json()) as AccountSummary[];
+    setAccounts(data);
+  }
+
+  useEffect(() => {
+    if (status !== "authenticated") {
+      setAccounts([]);
+      setAccountsError("");
+      setIsLoadingAccounts(false);
+      return;
+    }
+
+    let active = true;
+
+    async function bootstrapAccounts() {
+      try {
+        const accessToken = await getAccessToken();
+        if (!active) return;
+        await fetchAccounts(accessToken);
+      } catch (loadError) {
+        if (!active) return;
+
+        setAccounts([]);
+        setAccountsError(
+          loadError instanceof Error ? loadError.message : "Ocorreu um erro ao carregar as contas.",
+        );
+      } finally {
+        if (active) {
+          setIsLoadingAccounts(false);
+        }
+      }
+    }
+
+    void bootstrapAccounts();
+
+    return () => {
+      active = false;
+    };
+  }, [getAccessToken, status]);
 
   const resetForm = () => {
     setExpense(emptyExpense);
@@ -42,7 +100,7 @@ export default function Home() {
     if (!item.date) return "Escolha a data da despesa.";
     if (!item.description.trim() || item.description.trim().length < 3) return "Descrição precisa ter ao menos 3 caracteres.";
     if (!(item.value > 0)) return "Valor precisa ser maior que zero.";
-    if (!item.paymentMethod) return "Escolha uma forma de pagamento.";
+    if (!item.paymentMethod) return "Escolha uma conta.";
     return "";
   };
 
@@ -147,6 +205,7 @@ export default function Home() {
         throw new Error(responseText || "Nao foi possivel salvar a conta.");
       }
 
+      await fetchAccounts(accessToken);
       setAccount(emptyAccountForm);
       setAccountSubmitSuccess("Conta salva com sucesso.");
     } catch (submitError) {
@@ -155,6 +214,7 @@ export default function Home() {
       );
     } finally {
       setIsSubmittingAccount(false);
+      setIsLoadingAccounts(false);
     }
   };
 
@@ -215,6 +275,9 @@ export default function Home() {
             expense={expense}
             setExpense={setExpense}
             isEditing={isEditingIndex !== null}
+            accounts={accounts}
+            isLoadingAccounts={isLoadingAccounts}
+            accountsError={accountsError}
             onSubmit={handleSubmit}
             onCancel={resetForm}
           />
