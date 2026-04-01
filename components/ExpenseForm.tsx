@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Expense, expenseCategoryOptions } from "../types/expense";
 import { AccountSummary } from "../types/account";
 
@@ -28,9 +29,17 @@ export function ExpenseForm({
     expense.installments > 1
       ? accounts.filter((account) => account.accountType === "CREDIT_CARD")
       : accounts;
+  const selectedExpenseAccount = accounts.find((account) => account.accountId === expense.accountId);
+  const isConsumptionAccount = selectedExpenseAccount?.accountType === "FIXED_BILL";
   const hasCurrentSelection = availableExpenseAccounts.some((account) => account.accountId === expense.accountId);
   const paymentAccounts = accounts.filter((account) => account.accountType === "CHECKING_ACCOUNT");
   const hasCurrentPaymentSelection = paymentAccounts.some((account) => account.accountId === expense.paidFromAccountId);
+
+  useEffect(() => {
+    if (isConsumptionAccount && expense.installments !== 1) {
+      setExpense({ ...expense, installments: 1 });
+    }
+  }, [expense, isConsumptionAccount, setExpense]);
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
@@ -48,22 +57,24 @@ export function ExpenseForm({
           />
         </div>
 
-        <div>
-          <label htmlFor="installments" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-            Parcelas
-          </label>
-          <input
-            id="installments"
-            type="number"
-            min="1"
-            value={expense.installments}
-            onChange={(e) => setExpense({ ...expense, installments: Number(e.target.value) || 1 })}
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-          />
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            Use `1` para despesa a vista.
-          </p>
-        </div>
+        {!isConsumptionAccount && (
+          <div>
+            <label htmlFor="installments" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Parcelas
+            </label>
+            <input
+              id="installments"
+              type="number"
+              min="1"
+              value={expense.installments}
+              onChange={(e) => setExpense({ ...expense, installments: Number(e.target.value) || 1 })}
+              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            />
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Use `1` para despesa a vista.
+            </p>
+          </div>
+        )}
 
         <div>
           <label htmlFor="value" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -93,6 +104,7 @@ export function ExpenseForm({
                 ...expense,
                 accountId: e.target.value,
                 accountName: selectedAccount?.name ?? "",
+                installments: selectedAccount?.accountType === "FIXED_BILL" ? 1 : expense.installments,
               });
             }}
             disabled={isLoadingAccounts || availableExpenseAccounts.length === 0}
