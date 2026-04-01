@@ -1,7 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: finance-app-ingress
+  name: finance-front-ingress
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
@@ -14,6 +14,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: finance-app-service
+                name: finance-front-service
                 port:
                   number: 80
