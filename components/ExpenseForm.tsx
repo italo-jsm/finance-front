@@ -25,21 +25,17 @@ export function ExpenseForm({
   onSubmit,
   onCancel,
 }: ExpenseFormProps) {
-  const availableExpenseAccounts =
-    expense.installments > 1
-      ? accounts.filter((account) => account.accountType === "CREDIT_CARD")
-      : accounts;
   const selectedExpenseAccount = accounts.find((account) => account.accountId === expense.accountId);
-  const isConsumptionAccount = selectedExpenseAccount?.accountType === "FIXED_BILL";
-  const hasCurrentSelection = availableExpenseAccounts.some((account) => account.accountId === expense.accountId);
+  const isCreditCardAccount = selectedExpenseAccount?.accountType === "CREDIT_CARD";
+  const hasCurrentSelection = accounts.some((account) => account.accountId === expense.accountId);
   const paymentAccounts = accounts.filter((account) => account.accountType === "CHECKING_ACCOUNT");
   const hasCurrentPaymentSelection = paymentAccounts.some((account) => account.accountId === expense.paidFromAccountId);
 
   useEffect(() => {
-    if (isConsumptionAccount && expense.installments !== 1) {
+    if (!isCreditCardAccount && expense.installments !== 1) {
       setExpense({ ...expense, installments: 1 });
     }
-  }, [expense, isConsumptionAccount, setExpense]);
+  }, [expense, isCreditCardAccount, setExpense]);
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
@@ -57,7 +53,7 @@ export function ExpenseForm({
           />
         </div>
 
-        {!isConsumptionAccount && (
+        {isCreditCardAccount && (
           <div>
             <label htmlFor="installments" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
               Parcelas
@@ -99,41 +95,42 @@ export function ExpenseForm({
             id="accountId"
             value={expense.accountId}
             onChange={(e) => {
-              const selectedAccount = availableExpenseAccounts.find((account) => account.accountId === e.target.value);
+              const selectedAccount = accounts.find((account) => account.accountId === e.target.value);
               setExpense({
                 ...expense,
                 accountId: e.target.value,
                 accountName: selectedAccount?.name ?? "",
-                installments: selectedAccount?.accountType === "FIXED_BILL" ? 1 : expense.installments,
+                installments: selectedAccount?.accountType === "CREDIT_CARD" ? expense.installments : 1,
               });
             }}
-            disabled={isLoadingAccounts || availableExpenseAccounts.length === 0}
+            disabled={isLoadingAccounts || accounts.length === 0}
             className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <option value="">
               {isLoadingAccounts
                 ? "Carregando contas..."
-                : availableExpenseAccounts.length
+                : accounts.length
                   ? "Selecione uma conta"
-                  : expense.installments > 1
-                    ? "Nenhum cartao de credito disponivel"
-                    : "Nenhuma conta disponivel"}
+                  : "Nenhuma conta disponivel"}
             </option>
             {!hasCurrentSelection && expense.accountId && (
               <option value={expense.accountId}>{expense.accountName || "Conta atual"}</option>
             )}
-            {availableExpenseAccounts.map((account) => (
+            {accounts.map((account) => (
               <option key={account.accountId} value={account.accountId}>
                 {account.name}
               </option>
             ))}
           </select>
           {accountsError && <p className="mt-2 text-sm text-red-600 dark:text-red-300">{accountsError}</p>}
-          {!accountsError && !isLoadingAccounts && availableExpenseAccounts.length === 0 && (
+          {!accountsError && !isLoadingAccounts && accounts.length === 0 && (
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              {expense.installments > 1
-                ? "Despesas parceladas exigem uma conta do tipo cartao de credito."
-                : "Cadastre ao menos uma conta para vincular a despesa."}
+              Cadastre ao menos uma conta para vincular a despesa.
+            </p>
+          )}
+          {!accountsError && !isLoadingAccounts && selectedExpenseAccount && !isCreditCardAccount && (
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Parcelas ficam disponiveis apenas para cartao de credito.
             </p>
           )}
         </div>
