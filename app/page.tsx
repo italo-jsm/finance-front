@@ -11,13 +11,22 @@ import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ExpenseList } from "@/components/ExpenseList";
-import { accountsApiUrl } from "@/lib/config";
+import { accountsApiUrl, expensesApiUrl } from "@/lib/config";
+
+function getTodayDate() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 const emptyExpense: Expense = {
-  date: "",
+  date: getTodayDate(),
   description: "",
   value: 0,
-  paymentMethod: "",
+  category: "OTHER",
+  installments: 1,
+  accountId: "",
+  accountName: "",
+  isPaid: false,
+  paidFromAccountId: "",
 };
 
 export default function Home() {
@@ -100,11 +109,19 @@ export default function Home() {
     if (!item.date) return "Escolha a data da despesa.";
     if (!item.description.trim() || item.description.trim().length < 3) return "Descrição precisa ter ao menos 3 caracteres.";
     if (!(item.value > 0)) return "Valor precisa ser maior que zero.";
-    if (!item.paymentMethod) return "Escolha uma conta.";
+    if (!item.accountId) return "Escolha uma conta.";
+    if (!Number.isInteger(item.installments) || item.installments < 1) return "Parcelas deve ser 1 ou maior.";
+    if (item.isPaid && !item.paidFromAccountId) return "Escolha a conta de pagamento.";
+
+    const selectedAccount = accounts.find((account) => account.accountId === item.accountId);
+    if (item.installments > 1 && selectedAccount?.accountType !== "CREDIT_CARD") {
+      return "Despesas parceladas so podem ser lancadas em cartao de credito.";
+    }
+
     return "";
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const error = validateExpense(expense);
     if (error) {
@@ -118,8 +135,38 @@ export default function Home() {
       return;
     }
 
-    addExpense(expense);
-    resetForm();
+    try {
+      const accessToken = await getAccessToken();
+
+      const response = await fetch(expensesApiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          description: expense.description.trim(),
+          amount: expense.value,
+          eventDate: expense.date,
+          category: expense.category,
+          accountId: expense.accountId,
+          installments: expense.installments,
+          paymentMethod: expense.isPaid ? "TRANSFER" : null,
+          paymentDate: expense.isPaid ? expense.date : null,
+          paidFromAccountId: expense.isPaid ? expense.paidFromAccountId : null,
+        }),
+      });
+
+      if (!response.ok) {
+        const responseText = await response.text();
+        throw new Error(responseText || "Nao foi possivel salvar a despesa.");
+      }
+
+      addExpense(expense);
+      resetForm();
+    } catch (submitError) {
+      alert(submitError instanceof Error ? submitError.message : "Ocorreu um erro ao salvar a despesa.");
+    }
   };
 
   const handleEdit = (index: number) => {

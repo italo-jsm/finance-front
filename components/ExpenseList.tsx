@@ -1,6 +1,6 @@
 "use client";
 
-import { Expense } from "../types/expense";
+import { Expense, expenseCategoryOptions } from "../types/expense";
 
 type ExpenseListProps = {
   expenses: Expense[];
@@ -19,10 +19,18 @@ export function ExpenseList({ expenses, onEdit, onDelete }: ExpenseListProps) {
       <ul className="mt-3 space-y-2">
         {expenses.map((item, index) => (
           <li key={`${item.date}-${item.description}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">
+            {/*
+              Old local items may not have the new fields yet, so we keep the rendering resilient.
+            */}
             <div className="flex w-full items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className="text-sm text-slate-600 dark:text-slate-300">{item.date} • {item.paymentMethod}</p>
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  {item.date} • {item.accountName || "Conta nao informada"}
+                </p>
                 <p className="font-medium break-words">{item.description}</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {expenseCategoryOptions.find((option) => option.value === item.category)?.label ?? "Outros"} • {item.installments}x
+                </p>
                 <p className="text-base font-bold">R$ {item.value.toFixed(2)}</p>
               </div>
               <div className="flex gap-2">

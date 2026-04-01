@@ -9,7 +9,17 @@ export function useExpenses() {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return [];
     try {
-      return JSON.parse(stored) as Expense[];
+      return (JSON.parse(stored) as Partial<Expense>[]).map((expense) => ({
+        date: expense.date ?? "",
+        description: expense.description ?? "",
+        value: expense.value ?? 0,
+        category: expense.category ?? "OTHER",
+        installments: expense.installments ?? 1,
+        accountId: expense.accountId ?? "",
+        accountName: expense.accountName ?? "",
+        isPaid: expense.isPaid ?? false,
+        paidFromAccountId: expense.paidFromAccountId ?? "",
+      }));
     } catch {
       return [];
     }
