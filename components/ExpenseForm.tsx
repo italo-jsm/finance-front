@@ -34,19 +34,19 @@ export function ExpenseForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-[1.3fr_0.7fr]">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
-        <label htmlFor="date" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Data
-        </label>
-        <input
-          id="date"
-          type="date"
-          value={expense.date}
-          onChange={(e) => setExpense({ ...expense, date: e.target.value })}
-          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-        />
-      </div>
+          <label htmlFor="date" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Data
+          </label>
+          <input
+            id="date"
+            type="date"
+            value={expense.date}
+            onChange={(e) => setExpense({ ...expense, date: e.target.value })}
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </div>
 
         <div>
           <label htmlFor="installments" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -64,82 +64,80 @@ export function ExpenseForm({
             Use `1` para despesa a vista.
           </p>
         </div>
-      </div>
-
-      <div>
-        <label htmlFor="description" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Descrição
-        </label>
-        <input
-          id="description"
-          type="text"
-          value={expense.description}
-          onChange={(e) => setExpense({ ...expense, description: e.target.value })}
-          placeholder="Ex: Conta de luz"
-          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-        />
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-[1fr_1fr]">
-        <div>
-        <label htmlFor="value" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Valor
-        </label>
-        <input
-          id="value"
-          type="number"
-          step="0.01"
-          value={expense.value || ""}
-          onChange={(e) => setExpense({ ...expense, value: Number(e.target.value) })}
-          placeholder="0.00"
-          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-        />
-      </div>
 
         <div>
-        <label htmlFor="accountId" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-          Conta
-        </label>
-        <select
-          id="accountId"
-          value={expense.accountId}
-          onChange={(e) => {
-            const selectedAccount = availableExpenseAccounts.find((account) => account.accountId === e.target.value);
-            setExpense({
-              ...expense,
-              accountId: e.target.value,
-              accountName: selectedAccount?.name ?? "",
-            });
-          }}
-          disabled={isLoadingAccounts || availableExpenseAccounts.length === 0}
-          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-        >
-          <option value="">
-            {isLoadingAccounts
-              ? "Carregando contas..."
-              : availableExpenseAccounts.length
-                ? "Selecione uma conta"
-                : expense.installments > 1
-                  ? "Nenhum cartao de credito disponivel"
-                  : "Nenhuma conta disponivel"}
-          </option>
-          {!hasCurrentSelection && expense.accountId && (
-            <option value={expense.accountId}>{expense.accountName || "Conta atual"}</option>
-          )}
-          {availableExpenseAccounts.map((account) => (
-            <option key={account.accountId} value={account.accountId}>
-              {account.name}
+          <label htmlFor="value" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Valor
+          </label>
+          <input
+            id="value"
+            type="number"
+            step="0.01"
+            value={expense.value || ""}
+            onChange={(e) => setExpense({ ...expense, value: Number(e.target.value) })}
+            placeholder="0.00"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="accountId" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Conta
+          </label>
+          <select
+            id="accountId"
+            value={expense.accountId}
+            onChange={(e) => {
+              const selectedAccount = availableExpenseAccounts.find((account) => account.accountId === e.target.value);
+              setExpense({
+                ...expense,
+                accountId: e.target.value,
+                accountName: selectedAccount?.name ?? "",
+              });
+            }}
+            disabled={isLoadingAccounts || availableExpenseAccounts.length === 0}
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          >
+            <option value="">
+              {isLoadingAccounts
+                ? "Carregando contas..."
+                : availableExpenseAccounts.length
+                  ? "Selecione uma conta"
+                  : expense.installments > 1
+                    ? "Nenhum cartao de credito disponivel"
+                    : "Nenhuma conta disponivel"}
             </option>
-          ))}
-        </select>
-        {accountsError && <p className="mt-2 text-sm text-red-600 dark:text-red-300">{accountsError}</p>}
-        {!accountsError && !isLoadingAccounts && availableExpenseAccounts.length === 0 && (
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            {expense.installments > 1
-              ? "Despesas parceladas exigem uma conta do tipo cartao de credito."
-              : "Cadastre ao menos uma conta para vincular a despesa."}
-          </p>
-        )}
+            {!hasCurrentSelection && expense.accountId && (
+              <option value={expense.accountId}>{expense.accountName || "Conta atual"}</option>
+            )}
+            {availableExpenseAccounts.map((account) => (
+              <option key={account.accountId} value={account.accountId}>
+                {account.name}
+              </option>
+            ))}
+          </select>
+          {accountsError && <p className="mt-2 text-sm text-red-600 dark:text-red-300">{accountsError}</p>}
+          {!accountsError && !isLoadingAccounts && availableExpenseAccounts.length === 0 && (
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              {expense.installments > 1
+                ? "Despesas parceladas exigem uma conta do tipo cartao de credito."
+                : "Cadastre ao menos uma conta para vincular a despesa."}
+            </p>
+          )}
+        </div>
+
+        <div className="sm:col-span-2">
+          <label htmlFor="description" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+            Descrição
+          </label>
+          <input
+            id="description"
+            type="text"
+            value={expense.description}
+            onChange={(e) => setExpense({ ...expense, description: e.target.value })}
+            placeholder="Ex: Conta de luz"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+          />
         </div>
       </div>
 

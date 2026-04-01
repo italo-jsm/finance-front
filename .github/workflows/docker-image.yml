@@ -1,4 +1,4 @@
-name: Build Docker Image
+name: Build, Push & Update K8s Branch
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -18,8 +18,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout app repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Define image metadata
+        id: image
+        run: |
+          echo "tag=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE_NAME}:sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -31,26 +39,35 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            ${{ steps.image.outputs.image }}
+            ${{ env.IMAGE_NAME }}:latest
           build-args: |
             NEXT_PUBLIC_KEYCLOAK_URL=${{ secrets.NEXT_PUBLIC_KEYCLOAK_URL }}
             NEXT_PUBLIC_KEYCLOAK_REALM=${{ secrets.NEXT_PUBLIC_KEYCLOAK_REALM }}
             NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=${{ secrets.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID }}
+
+      - name: Checkout k8s branch
+        uses: actions/checkout@v4
+        with:
+          ref: k8s
+          path: k8s-branch
+
+      - name: Update deployment image in k8s branch
+        run: |
+          sed -i -E 's|image: "?ghcr.io/italo-jsm/finance-front:[^"]*"?|image: "${{ steps.image.outputs.image }}"|' k8s-branch/deployment.yaml
+
+      - name: Commit and push k8s branch
+        run: |
+          cd k8s-branch
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployment.yaml
+          git commit -m "chore: update finance-front image to ${{ steps.image.outputs.tag }}" || echo "No changes to commit"
+          git push origin HEAD:k8s
