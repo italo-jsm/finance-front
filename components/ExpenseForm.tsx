@@ -8,6 +8,7 @@ type ExpenseFormProps = {
   expense: Expense;
   setExpense: (value: Expense) => void;
   isEditing: boolean;
+  isSubmitting: boolean;
   accounts: AccountSummary[];
   isLoadingAccounts: boolean;
   accountsError: string;
@@ -19,6 +20,7 @@ export function ExpenseForm({
   expense,
   setExpense,
   isEditing,
+  isSubmitting,
   accounts,
   isLoadingAccounts,
   accountsError,
@@ -240,9 +242,10 @@ export function ExpenseForm({
       <div className="flex items-center justify-between gap-2">
         <button
           type="submit"
+          disabled={isSubmitting}
           className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700"
         >
-          {isEditing ? "Atualizar" : "Salvar despesa"}
+          {isSubmitting ? "Salvando..." : isEditing ? "Atualizar" : "Salvar despesa"}
         </button>
         {isEditing && (
           <button

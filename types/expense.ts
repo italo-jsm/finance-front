@@ -14,6 +14,7 @@ export type ExpenseCategory =
   | "OTHER";
 
 export type Expense = {
+  expenseId?: string;
   date: string;
   description: string;
   value: number;

@@ -1,12 +1,11 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { AccountForm } from "@/components/AccountForm";
 import type { Expense } from "@/types/expense";
 import type { MenuItem } from "@/types/menu";
 import { emptyAccountForm, type AccountFormValues, type AccountSummary } from "@/types/account";
-import { useExpenses } from "@/hooks/useExpenses";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ExpenseForm } from "@/components/ExpenseForm";
@@ -15,6 +14,20 @@ import { accountsApiUrl, expensesApiUrl } from "@/lib/config";
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function getDateOffset(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildExpensesUrl() {
+  const searchParams = new URLSearchParams({
+    beginDate: getDateOffset(-1),
+    endDate: getTodayDate(),
+  });
+  return `${expensesApiUrl}?${searchParams.toString()}`;
 }
 
 const emptyExpense: Expense = {
@@ -29,12 +42,100 @@ const emptyExpense: Expense = {
   paidFromAccountId: "",
 };
 
+type ExpenseApiItem = Partial<{
+  expenseId: string;
+  id: string;
+  description: string;
+  amount: number;
+  value: number;
+  eventDate: string;
+  expenseDate: string;
+  date: string;
+  category: Expense["category"];
+  accountId: string;
+  accountName: string;
+  installments: number;
+  paymentDate: string | null;
+  paidFromAccountId: string | null;
+  isPaid: boolean;
+}>;
+
+function extractExpenseList(payload: unknown): ExpenseApiItem[] {
+  if (Array.isArray(payload)) {
+    return payload as ExpenseApiItem[];
+  }
+
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+
+    if (Array.isArray(record.data)) {
+      return record.data as ExpenseApiItem[];
+    }
+
+    if (Array.isArray(record.items)) {
+      return record.items as ExpenseApiItem[];
+    }
+
+    if (Array.isArray(record.content)) {
+      return record.content as ExpenseApiItem[];
+    }
+
+    if (Array.isArray(record.expenses)) {
+      return record.expenses as ExpenseApiItem[];
+    }
+
+    if ("expenseId" in record || "id" in record) {
+      return [record as ExpenseApiItem];
+    }
+  }
+
+  return [];
+}
+
+function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]): Expense {
+  const accountId = apiExpense.accountId ?? "";
+  const matchingAccount = accounts.find((account) => account.accountId === accountId);
+  const amount = apiExpense.amount ?? apiExpense.value ?? 0;
+  const paymentSource = apiExpense.paidFromAccountId ?? "";
+
+  return {
+    expenseId: apiExpense.expenseId ?? apiExpense.id,
+    date: apiExpense.expenseDate ?? apiExpense.eventDate ?? apiExpense.date ?? "",
+    description: apiExpense.description ?? "",
+    value: typeof amount === "number" ? amount : Number(amount) || 0,
+    category: apiExpense.category ?? "OTHER",
+    installments: apiExpense.installments ?? 1,
+    accountId,
+    accountName: apiExpense.accountName ?? matchingAccount?.name ?? "",
+    isPaid: apiExpense.isPaid ?? Boolean(apiExpense.paymentDate || paymentSource),
+    paidFromAccountId: paymentSource,
+  };
+}
+
+function buildExpensePayload(expense: Expense) {
+  return {
+    description: expense.description.trim(),
+    amount: expense.value,
+    eventDate: expense.date,
+    category: expense.category,
+    accountId: expense.accountId,
+    installments: expense.installments,
+    paymentMethod: expense.isPaid ? "TRANSFER" : null,
+    paymentDate: expense.isPaid ? expense.date : null,
+    paidFromAccountId: expense.isPaid ? expense.paidFromAccountId : null,
+  };
+}
+
 export default function Home() {
   const { status, error, login, configured, profile, tokenParsed, getAccessToken } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuItem>("overview");
   const [expense, setExpense] = useState<Expense>(emptyExpense);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isEditingIndex, setIsEditingIndex] = useState<number | null>(null);
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+  const [isLoadingExpenses, setIsLoadingExpenses] = useState(false);
+  const [expensesError, setExpensesError] = useState("");
   const [account, setAccount] = useState<AccountFormValues>(emptyAccountForm);
   const [isSubmittingAccount, setIsSubmittingAccount] = useState(false);
   const [accountSubmitError, setAccountSubmitError] = useState("");
@@ -43,9 +144,7 @@ export default function Home() {
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
   const [accountsError, setAccountsError] = useState("");
 
-  const { expenses, addExpense, updateExpense, deleteExpense } = useExpenses();
-
-  async function fetchAccounts(accessToken: string) {
+  const fetchAccounts = useCallback(async (accessToken: string) => {
     setIsLoadingAccounts(true);
     setAccountsError("");
 
@@ -62,10 +161,34 @@ export default function Home() {
 
     const data = (await response.json()) as AccountSummary[];
     setAccounts(data);
-  }
+    return data;
+  }, []);
+
+  const fetchExpenses = useCallback(async (accessToken: string, availableAccounts: AccountSummary[]) => {
+    setIsLoadingExpenses(true);
+    setExpensesError("");
+
+    const response = await fetch(buildExpensesUrl(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new Error(responseText || "Nao foi possivel carregar as despesas.");
+    }
+
+    const payload = await response.json();
+    const data = extractExpenseList(payload);
+    setExpenses(data.map((item) => normalizeExpense(item, availableAccounts)));
+  }, []);
 
   useEffect(() => {
     if (status !== "authenticated") {
+      setExpenses([]);
+      setExpensesError("");
+      setIsLoadingExpenses(false);
       setAccounts([]);
       setAccountsError("");
       setIsLoadingAccounts(false);
@@ -74,31 +197,76 @@ export default function Home() {
 
     let active = true;
 
-    async function bootstrapAccounts() {
+    async function bootstrapData() {
+      let loadedAccounts: AccountSummary[] = [];
+
       try {
         const accessToken = await getAccessToken();
         if (!active) return;
-        await fetchAccounts(accessToken);
-      } catch (loadError) {
-        if (!active) return;
 
+        try {
+          loadedAccounts = await fetchAccounts(accessToken);
+        } catch (accountsLoadError) {
+          if (!active) return;
+          loadedAccounts = [];
+          setAccounts([]);
+          setAccountsError(
+            accountsLoadError instanceof Error
+              ? accountsLoadError.message
+              : "Ocorreu um erro ao carregar as contas.",
+          );
+        }
+
+        try {
+          await fetchExpenses(accessToken, loadedAccounts);
+        } catch (expensesLoadError) {
+          if (!active) return;
+          setExpenses([]);
+          setExpensesError(
+            expensesLoadError instanceof Error
+              ? expensesLoadError.message
+              : "Ocorreu um erro ao carregar as despesas.",
+          );
+        }
+      } catch (bootstrapError) {
+        if (!active) return;
+        const message =
+          bootstrapError instanceof Error
+            ? bootstrapError.message
+            : "Ocorreu um erro ao inicializar os dados do painel.";
         setAccounts([]);
-        setAccountsError(
-          loadError instanceof Error ? loadError.message : "Ocorreu um erro ao carregar as contas.",
-        );
+        setExpenses([]);
+        setAccountsError(message);
+        setExpensesError(message);
       } finally {
         if (active) {
+          setIsLoadingExpenses(false);
           setIsLoadingAccounts(false);
         }
       }
     }
 
-    void bootstrapAccounts();
+    setIsLoadingAccounts(true);
+    void bootstrapData();
 
     return () => {
       active = false;
     };
-  }, [getAccessToken, status]);
+  }, [fetchAccounts, fetchExpenses, getAccessToken, status]);
+
+  useEffect(() => {
+    setExpenses((currentExpenses) =>
+      currentExpenses.map((currentExpense) => {
+        const matchingAccount = accounts.find((item) => item.accountId === currentExpense.accountId);
+        return matchingAccount
+          ? {
+              ...currentExpense,
+              accountName: matchingAccount.name,
+            }
+          : currentExpense;
+      }),
+    );
+  }, [accounts]);
 
   const resetForm = () => {
     setExpense(emptyExpense);
@@ -123,38 +291,25 @@ export default function Home() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setExpensesError("");
     const error = validateExpense(expense);
     if (error) {
       alert(error);
       return;
     }
 
-    if (isEditingIndex !== null) {
-      updateExpense(isEditingIndex, expense);
-      resetForm();
-      return;
-    }
-
+    setIsSubmittingExpense(true);
     try {
       const accessToken = await getAccessToken();
-
-      const response = await fetch(expensesApiUrl, {
-        method: "POST",
+      const expenseId = expense.expenseId;
+      const isEditing = isEditingIndex !== null && Boolean(expenseId);
+      const response = await fetch(isEditing ? `${expensesApiUrl}/${expenseId}` : expensesApiUrl, {
+        method: isEditing ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({
-          description: expense.description.trim(),
-          amount: expense.value,
-          eventDate: expense.date,
-          category: expense.category,
-          accountId: expense.accountId,
-          installments: expense.installments,
-          paymentMethod: expense.isPaid ? "TRANSFER" : null,
-          paymentDate: expense.isPaid ? expense.date : null,
-          paidFromAccountId: expense.isPaid ? expense.paidFromAccountId : null,
-        }),
+        body: JSON.stringify(buildExpensePayload(expense)),
       });
 
       if (!response.ok) {
@@ -162,10 +317,12 @@ export default function Home() {
         throw new Error(responseText || "Nao foi possivel salvar a despesa.");
       }
 
-      addExpense(expense);
+      await fetchExpenses(accessToken, accounts);
       resetForm();
     } catch (submitError) {
       alert(submitError instanceof Error ? submitError.message : "Ocorreu um erro ao salvar a despesa.");
+    } finally {
+      setIsSubmittingExpense(false);
     }
   };
 
@@ -177,11 +334,39 @@ export default function Home() {
   };
 
   const handleDelete = (index: number) => {
-    if (!window.confirm("Remover esta despesa?")) return;
-    deleteExpense(index);
-    if (isEditingIndex === index) {
-      resetForm();
+    const currentExpense = expenses[index];
+    if (!currentExpense?.expenseId) {
+      alert("Nao foi possivel identificar a despesa para exclusao.");
+      return;
     }
+
+    if (!window.confirm("Remover esta despesa?")) return;
+
+    void (async () => {
+      setExpensesError("");
+
+      try {
+        const accessToken = await getAccessToken();
+        const response = await fetch(`${expensesApiUrl}/${currentExpense.expenseId}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        if (!response.ok) {
+          const responseText = await response.text();
+          throw new Error(responseText || "Nao foi possivel remover a despesa.");
+        }
+
+        await fetchExpenses(accessToken, accounts);
+        if (isEditingIndex === index) {
+          resetForm();
+        }
+      } catch (deleteError) {
+        alert(deleteError instanceof Error ? deleteError.message : "Ocorreu um erro ao remover a despesa.");
+      }
+    })();
   };
 
   const validateDay = (value: string, fieldLabel: string) => {
@@ -322,13 +507,20 @@ export default function Home() {
             expense={expense}
             setExpense={setExpense}
             isEditing={isEditingIndex !== null}
+            isSubmitting={isSubmittingExpense}
             accounts={accounts}
             isLoadingAccounts={isLoadingAccounts}
             accountsError={accountsError}
             onSubmit={handleSubmit}
             onCancel={resetForm}
           />
-          <ExpenseList expenses={expenses} onEdit={handleEdit} onDelete={handleDelete} />
+          <ExpenseList
+            expenses={expenses}
+            isLoading={isLoadingExpenses}
+            error={expensesError}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+          />
         </div>
       );
     }

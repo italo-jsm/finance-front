@@ -4,11 +4,21 @@ import { Expense, expenseCategoryOptions } from "../types/expense";
 
 type ExpenseListProps = {
   expenses: Expense[];
+  isLoading: boolean;
+  error: string;
   onEdit: (index: number) => void;
   onDelete: (index: number) => void;
 };
 
-export function ExpenseList({ expenses, onEdit, onDelete }: ExpenseListProps) {
+export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete }: ExpenseListProps) {
+  if (isLoading) {
+    return <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Carregando despesas...</p>;
+  }
+
+  if (error) {
+    return <p className="mt-6 text-sm text-red-600 dark:text-red-300">{error}</p>;
+  }
+
   if (!expenses.length) {
     return <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Nenhuma despesa cadastrada ainda.</p>;
   }
