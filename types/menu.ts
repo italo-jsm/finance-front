@@ -1,1 +1,1 @@
-export type MenuItem = "overview" | "transactions" | "accounts" | "reports";
+export type MenuItem = "overview" | "transactions" | "expenseHistory" | "accounts" | "reports";

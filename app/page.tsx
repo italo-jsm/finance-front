@@ -10,6 +10,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ExpenseList } from "@/components/ExpenseList";
+import { ExpenseHistoryTable, type ExpenseHistoryFilters } from "@/components/ExpenseHistoryTable";
 import { accountsApiUrl, expensesApiUrl } from "@/lib/config";
 
 function getTodayDate() {
@@ -22,11 +23,20 @@ function getDateOffset(days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-function buildExpensesUrl() {
+function buildRecentExpensesUrl() {
   const searchParams = new URLSearchParams({
     beginDate: getDateOffset(-5),
     endDate: getTodayDate(),
   });
+  return `${expensesApiUrl}?${searchParams.toString()}`;
+}
+
+function buildExpenseHistoryUrl(filters: ExpenseHistoryFilters) {
+  const searchParams = new URLSearchParams({
+    beginDate: filters.dateFrom || getDateOffset(-3650),
+    endDate: filters.dateTo || getTodayDate(),
+  });
+
   return `${expensesApiUrl}?${searchParams.toString()}`;
 }
 
@@ -55,6 +65,7 @@ type ExpenseApiItem = Partial<{
   accountId: string;
   accountName: string;
   installments: number;
+  paymentMethod: string | null;
   paymentDate: string | null;
   paidFromAccountId: string | null;
   isPaid: boolean;
@@ -109,6 +120,7 @@ function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]
     accountName: apiExpense.accountName ?? matchingAccount?.name ?? "",
     isPaid: apiExpense.isPaid ?? Boolean(apiExpense.paymentDate || paymentSource),
     paidFromAccountId: paymentSource,
+    paymentMethod: apiExpense.paymentMethod ?? null,
   };
 }
 
@@ -136,6 +148,10 @@ export default function Home() {
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
   const [isLoadingExpenses, setIsLoadingExpenses] = useState(false);
   const [expensesError, setExpensesError] = useState("");
+  const [expenseHistory, setExpenseHistory] = useState<Expense[]>([]);
+  const [isLoadingExpenseHistory, setIsLoadingExpenseHistory] = useState(false);
+  const [expenseHistoryError, setExpenseHistoryError] = useState("");
+  const [hasSearchedExpenseHistory, setHasSearchedExpenseHistory] = useState(false);
   const [account, setAccount] = useState<AccountFormValues>(emptyAccountForm);
   const [isSubmittingAccount, setIsSubmittingAccount] = useState(false);
   const [accountSubmitError, setAccountSubmitError] = useState("");
@@ -164,11 +180,8 @@ export default function Home() {
     return data;
   }, []);
 
-  const fetchExpenses = useCallback(async (accessToken: string, availableAccounts: AccountSummary[]) => {
-    setIsLoadingExpenses(true);
-    setExpensesError("");
-
-    const response = await fetch(buildExpensesUrl(), {
+  const fetchExpenses = useCallback(async (accessToken: string, requestUrl: string, availableAccounts: AccountSummary[]) => {
+    const response = await fetch(requestUrl, {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
@@ -181,10 +194,10 @@ export default function Home() {
 
     const payload = await response.json();
     const data = extractExpenseList(payload);
-    setExpenses(data.map((item) => normalizeExpense(item, availableAccounts)));
+    return data.map((item) => normalizeExpense(item, availableAccounts));
   }, []);
 
-  const refreshExpenses = useCallback(async () => {
+  const refreshRecentExpenses = useCallback(async () => {
     if (status !== "authenticated") return;
 
     setIsLoadingExpenses(true);
@@ -192,7 +205,8 @@ export default function Home() {
 
     try {
       const accessToken = await getAccessToken();
-      await fetchExpenses(accessToken, accounts);
+      const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
+      setExpenses(data);
     } catch (refreshError) {
       setExpenses([]);
       setExpensesError(
@@ -203,11 +217,42 @@ export default function Home() {
     }
   }, [accounts, fetchExpenses, getAccessToken, status]);
 
+  const searchExpenseHistory = useCallback(async (filters: ExpenseHistoryFilters) => {
+    if (status !== "authenticated") return;
+
+    setIsLoadingExpenseHistory(true);
+    setExpenseHistoryError("");
+    setHasSearchedExpenseHistory(true);
+
+    try {
+      const accessToken = await getAccessToken();
+      const data = await fetchExpenses(accessToken, buildExpenseHistoryUrl(filters), accounts);
+      const filteredData = data.filter((expense) => {
+        if (filters.category && expense.category !== filters.category) return false;
+        if (filters.accountId && expense.accountId !== filters.accountId) return false;
+
+        return true;
+      });
+      setExpenseHistory(filteredData);
+    } catch (refreshError) {
+      setExpenseHistory([]);
+      setExpenseHistoryError(
+        refreshError instanceof Error ? refreshError.message : "Ocorreu um erro ao carregar o histórico de despesas.",
+      );
+    } finally {
+      setIsLoadingExpenseHistory(false);
+    }
+  }, [accounts, fetchExpenses, getAccessToken, status]);
+
   useEffect(() => {
     if (status !== "authenticated") {
       setExpenses([]);
       setExpensesError("");
       setIsLoadingExpenses(false);
+      setExpenseHistory([]);
+      setExpenseHistoryError("");
+      setIsLoadingExpenseHistory(false);
+      setHasSearchedExpenseHistory(false);
       setAccounts([]);
       setAccountsError("");
       setIsLoadingAccounts(false);
@@ -237,7 +282,8 @@ export default function Home() {
         }
 
         try {
-          await fetchExpenses(accessToken, loadedAccounts);
+          const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), loadedAccounts);
+          setExpenses(data);
         } catch (expensesLoadError) {
           if (!active) return;
           setExpenses([]);
@@ -255,6 +301,7 @@ export default function Home() {
             : "Ocorreu um erro ao inicializar os dados do painel.";
         setAccounts([]);
         setExpenses([]);
+        setExpenseHistory([]);
         setAccountsError(message);
         setExpensesError(message);
       } finally {
@@ -285,18 +332,31 @@ export default function Home() {
           : currentExpense;
       }),
     );
+    setExpenseHistory((currentExpenses) =>
+      currentExpenses.map((currentExpense) => {
+        const matchingAccount = accounts.find((item) => item.accountId === currentExpense.accountId);
+        return matchingAccount
+          ? {
+              ...currentExpense,
+              accountName: matchingAccount.name,
+            }
+          : currentExpense;
+      }),
+    );
   }, [accounts]);
 
   useEffect(() => {
     if (activeMenu !== "transactions") return;
 
-    void refreshExpenses();
-  }, [activeMenu, refreshExpenses]);
+    void refreshRecentExpenses();
+  }, [activeMenu, refreshRecentExpenses]);
 
   const resetForm = () => {
     setExpense(emptyExpense);
     setIsEditingIndex(null);
   };
+
+  const isEditingExpense = Boolean(expense.expenseId);
 
   const validateExpense = (item: Expense) => {
     if (!item.date) return "Escolha a data da despesa.";
@@ -327,7 +387,7 @@ export default function Home() {
     try {
       const accessToken = await getAccessToken();
       const expenseId = expense.expenseId;
-      const isEditing = isEditingIndex !== null && Boolean(expenseId);
+      const isEditing = Boolean(expenseId);
       const response = await fetch(isEditing ? `${expensesApiUrl}/${expenseId}` : expensesApiUrl, {
         method: isEditing ? "PUT" : "POST",
         headers: {
@@ -342,7 +402,8 @@ export default function Home() {
         throw new Error(responseText || "Nao foi possivel salvar a despesa.");
       }
 
-      await fetchExpenses(accessToken, accounts);
+      const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
+      setExpenses(data);
       resetForm();
     } catch (submitError) {
       alert(submitError instanceof Error ? submitError.message : "Ocorreu um erro ao salvar a despesa.");
@@ -355,6 +416,20 @@ export default function Home() {
     const current = expenses[index];
     setExpense(current);
     setIsEditingIndex(index);
+    setActiveMenu("transactions");
+  };
+
+  const handleEditExpenseById = (expenseId: string) => {
+    const currentExpense =
+      expenseHistory.find((item) => item.expenseId === expenseId) ?? expenses.find((item) => item.expenseId === expenseId);
+
+    if (!currentExpense) {
+      alert("Nao foi possivel localizar a despesa selecionada.");
+      return;
+    }
+
+    setExpense(currentExpense);
+    setIsEditingIndex(null);
     setActiveMenu("transactions");
   };
 
@@ -384,8 +459,9 @@ export default function Home() {
           throw new Error(responseText || "Nao foi possivel remover a despesa.");
         }
 
-        await fetchExpenses(accessToken, accounts);
-        if (isEditingIndex === index) {
+        const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
+        setExpenses(data);
+        if (expense.expenseId === currentExpense.expenseId || isEditingIndex === index) {
           resetForm();
         }
       } catch (deleteError) {
@@ -527,11 +603,11 @@ export default function Home() {
     if (activeMenu === "transactions") {
       return (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <h2 className="text-2xl font-bold mb-4">{isEditingIndex !== null ? "Editar despesa" : "Cadastrar despesa"}</h2>
+          <h2 className="mb-4 text-2xl font-bold">{isEditingExpense ? "Editar despesa" : "Cadastrar despesa"}</h2>
           <ExpenseForm
             expense={expense}
             setExpense={setExpense}
-            isEditing={isEditingIndex !== null}
+            isEditing={isEditingExpense}
             isSubmitting={isSubmittingExpense}
             accounts={accounts}
             isLoadingAccounts={isLoadingAccounts}
@@ -547,6 +623,20 @@ export default function Home() {
             onDelete={handleDelete}
           />
         </div>
+      );
+    }
+
+    if (activeMenu === "expenseHistory") {
+      return (
+        <ExpenseHistoryTable
+          expenses={expenseHistory}
+          accounts={accounts}
+          isLoading={isLoadingExpenseHistory}
+          error={expenseHistoryError}
+          hasSearched={hasSearchedExpenseHistory}
+          onSearch={searchExpenseHistory}
+          onEdit={handleEditExpenseById}
+        />
       );
     }
 

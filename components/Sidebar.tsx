@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { MenuItem } from "@/types/menu";
 
 type SidebarProps = {
@@ -12,10 +13,17 @@ type SidebarProps = {
 export function Sidebar({ activeMenu, setActiveMenu, sidebarOpen, setSidebarOpen }: SidebarProps) {
   const items: Array<{ key: MenuItem; label: string }> = [
     { key: "overview", label: "Visão geral" },
-    { key: "transactions", label: "Transações" },
     { key: "accounts", label: "Contas" },
     { key: "reports", label: "Relatórios" },
   ];
+  const transactionsSectionActive = activeMenu === "transactions" || activeMenu === "expenseHistory";
+  const [transactionsOpen, setTransactionsOpen] = useState(transactionsSectionActive);
+
+  useEffect(() => {
+    if (transactionsSectionActive) {
+      setTransactionsOpen(true);
+    }
+  }, [transactionsSectionActive]);
 
   return (
     <aside
@@ -36,6 +44,53 @@ export function Sidebar({ activeMenu, setActiveMenu, sidebarOpen, setSidebarOpen
         <div>
           <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-slate-500">Finanças</p>
           <ul className="space-y-1">
+            <li className="space-y-1">
+              <button
+                onClick={() => {
+                  setTransactionsOpen((current) => !current);
+                }}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-medium ${
+                  transactionsSectionActive
+                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-200"
+                    : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+                }`}
+              >
+                <span className="flex items-center justify-between gap-3">
+                  <span>Transações</span>
+                  <span className="text-xs">{transactionsOpen ? "▲" : "▼"}</span>
+                </span>
+              </button>
+              {transactionsOpen ? (
+                <div className="ml-3 space-y-1 border-l border-slate-200 pl-3 dark:border-slate-700">
+                  <button
+                    onClick={() => {
+                      setActiveMenu("transactions");
+                      setSidebarOpen(false);
+                    }}
+                    className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
+                      activeMenu === "transactions"
+                        ? "bg-cyan-50 font-medium text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-200"
+                        : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Nova
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveMenu("expenseHistory");
+                      setSidebarOpen(false);
+                    }}
+                    className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
+                      activeMenu === "expenseHistory"
+                        ? "bg-cyan-50 font-medium text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-200"
+                        : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Todas as despesas
+                  </button>
+                </div>
+              ) : null}
+            </li>
             {items.map((item) => (
               <li key={item.key}>
                 <button

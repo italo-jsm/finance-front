@@ -24,6 +24,7 @@ export type Expense = {
   accountName: string;
   isPaid: boolean;
   paidFromAccountId: string;
+  paymentMethod?: string | null;
 };
 
 export const expenseCategoryOptions: Array<{ value: ExpenseCategory; label: string }> = [

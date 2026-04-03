@@ -14,6 +14,7 @@ export function Header({ sidebarOpen, setSidebarOpen, activeMenu }: HeaderProps)
   const titleMap: Record<MenuItem, string> = {
     overview: "Dashboard Financeiro",
     transactions: "Gerenciar Despesas",
+    expenseHistory: "Histórico de Despesas",
     accounts: "Cadastrar Contas",
     reports: "Relatórios",
   };
