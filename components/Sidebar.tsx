@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import type { MenuItem } from "@/types/menu";
 
+const TRANSACTIONS_MENU_STORAGE_KEY = "finance-front-transactions-menu-open";
+
 type SidebarProps = {
   activeMenu: MenuItem;
   setActiveMenu: (next: MenuItem) => void;
@@ -17,13 +19,27 @@ export function Sidebar({ activeMenu, setActiveMenu, sidebarOpen, setSidebarOpen
     { key: "reports", label: "Relatórios" },
   ];
   const transactionsSectionActive = activeMenu === "transactions" || activeMenu === "expenseHistory";
-  const [transactionsOpen, setTransactionsOpen] = useState(transactionsSectionActive);
+  const [transactionsOpen, setTransactionsOpen] = useState(false);
+
+  useEffect(() => {
+    const storedValue = window.localStorage.getItem(TRANSACTIONS_MENU_STORAGE_KEY);
+    if (storedValue === null) {
+      setTransactionsOpen(transactionsSectionActive);
+      return;
+    }
+
+    setTransactionsOpen(storedValue === "true");
+  }, [transactionsSectionActive]);
 
   useEffect(() => {
     if (transactionsSectionActive) {
       setTransactionsOpen(true);
     }
   }, [transactionsSectionActive]);
+
+  useEffect(() => {
+    window.localStorage.setItem(TRANSACTIONS_MENU_STORAGE_KEY, String(transactionsOpen));
+  }, [transactionsOpen]);
 
   return (
     <aside

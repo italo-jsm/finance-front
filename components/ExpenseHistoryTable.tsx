@@ -21,6 +21,9 @@ type ExpenseHistoryTableProps = {
   onEdit: (expenseId: string) => void;
 };
 
+type SortField = "date" | "description" | "category" | "account" | "value";
+type SortDirection = "asc" | "desc";
+
 function formatDate(value: string) {
   if (!value) return "-";
 
@@ -43,6 +46,8 @@ export function ExpenseHistoryTable({
   const [dateTo, setDateTo] = useState("");
   const [category, setCategory] = useState("");
   const [accountId, setAccountId] = useState("");
+  const [sortField, setSortField] = useState<SortField>("date");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const filteredExpenses = expenses.filter((expense) => {
     if (dateFrom && expense.date < dateFrom) return false;
@@ -51,6 +56,22 @@ export function ExpenseHistoryTable({
     if (accountId && expense.accountId !== accountId) return false;
 
     return true;
+  });
+
+  const sortedExpenses = [...filteredExpenses].sort((left, right) => {
+    const leftCategory = expenseCategoryOptions.find((option) => option.value === left.category)?.label ?? "Outros";
+    const rightCategory = expenseCategoryOptions.find((option) => option.value === right.category)?.label ?? "Outros";
+
+    const comparisonMap: Record<SortField, number> = {
+      date: left.date.localeCompare(right.date),
+      description: left.description.localeCompare(right.description, "pt-BR"),
+      category: leftCategory.localeCompare(rightCategory, "pt-BR"),
+      account: (left.accountName || "").localeCompare(right.accountName || "", "pt-BR"),
+      value: left.value - right.value,
+    };
+
+    const result = comparisonMap[sortField];
+    return sortDirection === "asc" ? result : result * -1;
   });
 
   return (
@@ -127,7 +148,36 @@ export function ExpenseHistoryTable({
               ))}
             </select>
           </div>
+        </div>
 
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <div>
+              <label htmlFor="history-sort-field" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                Ordenar por
+              </label>
+              <select
+                id="history-sort-field"
+                value={sortField}
+                onChange={(event) => setSortField(event.target.value as SortField)}
+                className="mt-1 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              >
+                <option value="date">Data</option>
+                <option value="description">Descricao</option>
+                <option value="category">Categoria</option>
+                <option value="account">Conta</option>
+                <option value="value">Valor</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSortDirection((current) => (current === "asc" ? "desc" : "asc"))}
+              className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              {sortDirection === "desc" ? "Mais recentes/maiores" : "Mais antigos/menores"}
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-3">
@@ -159,14 +209,14 @@ export function ExpenseHistoryTable({
         <p className="text-sm text-slate-500 dark:text-slate-300">Use os filtros acima e clique em buscar para carregar as despesas.</p>
       ) : null}
 
-      {hasSearched && !isLoading && !error && filteredExpenses.length === 0 ? (
+      {hasSearched && !isLoading && !error && sortedExpenses.length === 0 ? (
         <p className="text-sm text-slate-500 dark:text-slate-300">Nenhuma despesa encontrada com os filtros atuais.</p>
       ) : null}
 
-      {hasSearched && !isLoading && !error && filteredExpenses.length > 0 ? (
+      {hasSearched && !isLoading && !error && sortedExpenses.length > 0 ? (
         <>
           <div className="space-y-3 md:hidden">
-            {filteredExpenses.map((expense, index) => (
+            {sortedExpenses.map((expense, index) => (
               <article
                 key={expense.expenseId ?? `${expense.date}-${expense.description}-${index}`}
                 className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950"
@@ -223,7 +273,7 @@ export function ExpenseHistoryTable({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                  {filteredExpenses.map((expense, index) => (
+                  {sortedExpenses.map((expense, index) => (
                     <tr key={expense.expenseId ?? `${expense.date}-${expense.description}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/70">
                       <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">{formatDate(expense.date)}</td>
                       <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-slate-100">{expense.description}</td>
