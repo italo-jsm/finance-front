@@ -24,7 +24,7 @@ function getDateOffset(days: number) {
 
 function buildExpensesUrl() {
   const searchParams = new URLSearchParams({
-    beginDate: getDateOffset(-1),
+    beginDate: getDateOffset(-5),
     endDate: getTodayDate(),
   });
   return `${expensesApiUrl}?${searchParams.toString()}`;
@@ -184,6 +184,25 @@ export default function Home() {
     setExpenses(data.map((item) => normalizeExpense(item, availableAccounts)));
   }, []);
 
+  const refreshExpenses = useCallback(async () => {
+    if (status !== "authenticated") return;
+
+    setIsLoadingExpenses(true);
+    setExpensesError("");
+
+    try {
+      const accessToken = await getAccessToken();
+      await fetchExpenses(accessToken, accounts);
+    } catch (refreshError) {
+      setExpenses([]);
+      setExpensesError(
+        refreshError instanceof Error ? refreshError.message : "Ocorreu um erro ao carregar as despesas.",
+      );
+    } finally {
+      setIsLoadingExpenses(false);
+    }
+  }, [accounts, fetchExpenses, getAccessToken, status]);
+
   useEffect(() => {
     if (status !== "authenticated") {
       setExpenses([]);
@@ -267,6 +286,12 @@ export default function Home() {
       }),
     );
   }, [accounts]);
+
+  useEffect(() => {
+    if (activeMenu !== "transactions") return;
+
+    void refreshExpenses();
+  }, [activeMenu, refreshExpenses]);
 
   const resetForm = () => {
     setExpense(emptyExpense);
