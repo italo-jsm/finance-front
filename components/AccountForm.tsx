@@ -5,19 +5,23 @@ import { accountTypeOptions, AccountFormValues } from "@/types/account";
 type AccountFormProps = {
   account: AccountFormValues;
   setAccount: (value: AccountFormValues) => void;
+  isEditing: boolean;
   isSubmitting: boolean;
   submitError: string;
   submitSuccess: string;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onCancelEdit: () => void;
 };
 
 export function AccountForm({
   account,
   setAccount,
+  isEditing,
   isSubmitting,
   submitError,
   submitSuccess,
   onSubmit,
+  onCancelEdit,
 }: AccountFormProps) {
   const selectedType = accountTypeOptions.find((option) => option.value === account.accountType);
   const showClosingDay = account.accountType === "CREDIT_CARD";
@@ -117,13 +121,25 @@ export function AccountForm({
       ) : null}
 
       <div className="flex items-center justify-between gap-2">
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-        >
-          {isSubmitting ? "Salvando..." : "Salvar conta"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+          >
+            {isSubmitting ? "Salvando..." : isEditing ? "Salvar alteracoes" : "Salvar conta"}
+          </button>
+          {isEditing ? (
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              disabled={isSubmitting}
+              className="rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Cancelar edicao
+            </button>
+          ) : null}
+        </div>
       </div>
     </form>
   );

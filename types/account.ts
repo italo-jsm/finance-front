@@ -4,6 +4,9 @@ export type AccountSummary = {
   accountId: string;
   name: string;
   accountType: AccountType;
+  closingDay?: number | null;
+  dueDay?: number | null;
+  active?: boolean;
 };
 
 export type AccountTypeOption = {

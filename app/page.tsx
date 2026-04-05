@@ -3,9 +3,10 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { AccountForm } from "@/components/AccountForm";
+import { AccountList } from "@/components/AccountList";
 import type { Expense } from "@/types/expense";
 import type { MenuItem } from "@/types/menu";
-import { emptyAccountForm, type AccountFormValues, type AccountSummary } from "@/types/account";
+import { emptyAccountForm, type AccountFormValues, type AccountSummary, type AccountType } from "@/types/account";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
 import { ExpenseForm } from "@/components/ExpenseForm";
@@ -71,6 +72,71 @@ type ExpenseApiItem = Partial<{
   isPaid: boolean;
 }>;
 
+type AccountApiItem = Partial<{
+  accountId: string;
+  id: string;
+  name: string;
+  accountType: AccountType;
+  closingDay: number | string | null;
+  dueDay: number | string | null;
+  active: boolean;
+}>;
+
+function toOptionalDay(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const parsedValue = Number(value);
+  return Number.isInteger(parsedValue) ? parsedValue : null;
+}
+
+function extractMessageFromPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") {
+    return "";
+  }
+
+  const record = payload as Record<string, unknown>;
+  const candidates = [record.message, record.error, record.detail, record.title];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  if (Array.isArray(record.errors)) {
+    const firstMessage = record.errors.find((item) => typeof item === "string");
+    if (typeof firstMessage === "string" && firstMessage.trim()) {
+      return firstMessage.trim();
+    }
+  }
+
+  return "";
+}
+
+async function getApiErrorMessage(response: Response, fallbackMessage: string, clientErrorFallback?: string) {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    const payload = (await response.clone().json().catch(() => null)) as unknown;
+    const message = extractMessageFromPayload(payload);
+
+    if (message) {
+      return message;
+    }
+  }
+
+  const responseText = (await response.text().catch(() => "")).trim();
+  if (responseText) {
+    return responseText;
+  }
+
+  if (response.status >= 400 && response.status < 500 && clientErrorFallback) {
+    return clientErrorFallback;
+  }
+
+  return fallbackMessage;
+}
+
 function extractExpenseList(payload: unknown): ExpenseApiItem[] {
   if (Array.isArray(payload)) {
     return payload as ExpenseApiItem[];
@@ -101,6 +167,56 @@ function extractExpenseList(payload: unknown): ExpenseApiItem[] {
   }
 
   return [];
+}
+
+function extractAccountList(payload: unknown): AccountApiItem[] {
+  if (Array.isArray(payload)) {
+    return payload as AccountApiItem[];
+  }
+
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+
+    if (Array.isArray(record.data)) {
+      return record.data as AccountApiItem[];
+    }
+
+    if (Array.isArray(record.items)) {
+      return record.items as AccountApiItem[];
+    }
+
+    if (Array.isArray(record.content)) {
+      return record.content as AccountApiItem[];
+    }
+
+    if (Array.isArray(record.accounts)) {
+      return record.accounts as AccountApiItem[];
+    }
+
+    if ("accountId" in record || "id" in record) {
+      return [record as AccountApiItem];
+    }
+  }
+
+  return [];
+}
+
+function normalizeAccount(apiAccount: AccountApiItem): AccountSummary | null {
+  const accountId = apiAccount.accountId ?? apiAccount.id;
+  const accountType = apiAccount.accountType;
+
+  if (!accountId || !apiAccount.name || !accountType) {
+    return null;
+  }
+
+  return {
+    accountId,
+    name: apiAccount.name,
+    accountType,
+    closingDay: toOptionalDay(apiAccount.closingDay),
+    dueDay: toOptionalDay(apiAccount.dueDay),
+    active: apiAccount.active ?? true,
+  };
 }
 
 function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]): Expense {
@@ -153,12 +269,16 @@ export default function Home() {
   const [expenseHistoryError, setExpenseHistoryError] = useState("");
   const [hasSearchedExpenseHistory, setHasSearchedExpenseHistory] = useState(false);
   const [account, setAccount] = useState<AccountFormValues>(emptyAccountForm);
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [isSubmittingAccount, setIsSubmittingAccount] = useState(false);
   const [accountSubmitError, setAccountSubmitError] = useState("");
   const [accountSubmitSuccess, setAccountSubmitSuccess] = useState("");
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
   const [accountsError, setAccountsError] = useState("");
+  const [accountListFeedbackError, setAccountListFeedbackError] = useState("");
+  const [accountListFeedbackSuccess, setAccountListFeedbackSuccess] = useState("");
+  const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
 
   const fetchAccounts = useCallback(async (accessToken: string) => {
     setIsLoadingAccounts(true);
@@ -171,11 +291,15 @@ export default function Home() {
     });
 
     if (!response.ok) {
-      const responseText = await response.text();
-      throw new Error(responseText || "Nao foi possivel carregar as contas.");
+      throw new Error(await getApiErrorMessage(response, "Nao foi possivel carregar as contas."));
     }
 
-    const data = (await response.json()) as AccountSummary[];
+    const payload = await response.json();
+    const data = extractAccountList(payload)
+      .map((item) => normalizeAccount(item))
+      .filter((item): item is AccountSummary => item !== null)
+      .filter((item) => item.active !== false);
+
     setAccounts(data);
     return data;
   }, []);
@@ -256,6 +380,13 @@ export default function Home() {
       setAccounts([]);
       setAccountsError("");
       setIsLoadingAccounts(false);
+      setAccount(emptyAccountForm);
+      setEditingAccountId(null);
+      setAccountSubmitError("");
+      setAccountSubmitSuccess("");
+      setAccountListFeedbackError("");
+      setAccountListFeedbackSuccess("");
+      setDeletingAccountId(null);
       return;
     }
 
@@ -398,8 +529,7 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        const responseText = await response.text();
-        throw new Error(responseText || "Nao foi possivel salvar a despesa.");
+        throw new Error(await getApiErrorMessage(response, "Nao foi possivel salvar a despesa."));
       }
 
       const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
@@ -455,8 +585,7 @@ export default function Home() {
         });
 
         if (!response.ok) {
-          const responseText = await response.text();
-          throw new Error(responseText || "Nao foi possivel remover a despesa.");
+          throw new Error(await getApiErrorMessage(response, "Nao foi possivel remover a despesa."));
         }
 
         const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
@@ -500,10 +629,96 @@ export default function Home() {
     return "";
   };
 
+  const resetAccountForm = () => {
+    setAccount(emptyAccountForm);
+    setEditingAccountId(null);
+  };
+
+  const handleEditAccount = (accountId: string) => {
+    const selectedAccount = accounts.find((item) => item.accountId === accountId);
+
+    if (!selectedAccount) {
+      setAccountListFeedbackError("Nao foi possivel localizar a conta selecionada.");
+      setAccountListFeedbackSuccess("");
+      return;
+    }
+
+    setAccount({
+      name: selectedAccount.name,
+      accountType: selectedAccount.accountType,
+      closingDay: selectedAccount.closingDay ? String(selectedAccount.closingDay) : "",
+      dueDay: selectedAccount.dueDay ? String(selectedAccount.dueDay) : "",
+    });
+    setEditingAccountId(accountId);
+    setAccountSubmitError("");
+    setAccountSubmitSuccess("");
+    setAccountListFeedbackError("");
+    setAccountListFeedbackSuccess("");
+  };
+
+  const handleDeleteAccount = (accountId: string) => {
+    const selectedAccount = accounts.find((item) => item.accountId === accountId);
+
+    if (!selectedAccount) {
+      setAccountListFeedbackError("Nao foi possivel identificar a conta para exclusao.");
+      setAccountListFeedbackSuccess("");
+      return;
+    }
+
+    if (!window.confirm(`Excluir a conta "${selectedAccount.name}"?`)) {
+      return;
+    }
+
+    void (async () => {
+      setDeletingAccountId(accountId);
+      setAccountListFeedbackError("");
+      setAccountListFeedbackSuccess("");
+      setAccountSubmitError("");
+      setAccountSubmitSuccess("");
+
+      try {
+        const accessToken = await getAccessToken();
+        const response = await fetch(`${accountsApiUrl}/${accountId}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            await getApiErrorMessage(
+              response,
+              "Nao foi possivel excluir a conta.",
+              "A conta nao pode ser excluida porque ainda possui vinculos ou nao atende as regras do backend.",
+            ),
+          );
+        }
+
+        await fetchAccounts(accessToken);
+
+        if (editingAccountId === accountId) {
+          resetAccountForm();
+        }
+
+        setAccountListFeedbackSuccess("Conta excluida com sucesso.");
+      } catch (deleteError) {
+        setAccountListFeedbackError(
+          deleteError instanceof Error ? deleteError.message : "Ocorreu um erro ao excluir a conta.",
+        );
+      } finally {
+        setDeletingAccountId(null);
+        setIsLoadingAccounts(false);
+      }
+    })();
+  };
+
   const handleAccountSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setAccountSubmitError("");
     setAccountSubmitSuccess("");
+    setAccountListFeedbackError("");
+    setAccountListFeedbackSuccess("");
 
     const validationError = validateAccount(account);
     if (validationError) {
@@ -515,9 +730,10 @@ export default function Home() {
 
     try {
       const accessToken = await getAccessToken();
+      const isEditingAccount = Boolean(editingAccountId);
 
-      const response = await fetch(accountsApiUrl, {
-        method: "POST",
+      const response = await fetch(isEditingAccount ? `${accountsApiUrl}/${editingAccountId}` : accountsApiUrl, {
+        method: isEditingAccount ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
@@ -534,13 +750,12 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        const responseText = await response.text();
-        throw new Error(responseText || "Nao foi possivel salvar a conta.");
+        throw new Error(await getApiErrorMessage(response, "Nao foi possivel salvar a conta."));
       }
 
       await fetchAccounts(accessToken);
-      setAccount(emptyAccountForm);
-      setAccountSubmitSuccess("Conta salva com sucesso.");
+      resetAccountForm();
+      setAccountSubmitSuccess(isEditingAccount ? "Conta atualizada com sucesso." : "Conta salva com sucesso.");
     } catch (submitError) {
       setAccountSubmitError(
         submitError instanceof Error ? submitError.message : "Ocorreu um erro ao salvar a conta.",
@@ -600,6 +815,8 @@ export default function Home() {
   }
 
   const renderContent = () => {
+    const isEditingAccount = Boolean(editingAccountId);
+
     if (activeMenu === "transactions") {
       return (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
@@ -652,14 +869,26 @@ export default function Home() {
     if (activeMenu === "accounts") {
       return (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <h2 className="mb-4 text-2xl font-bold">Cadastrar conta</h2>
+          <h2 className="mb-4 text-2xl font-bold">{isEditingAccount ? "Editar conta" : "Cadastrar conta"}</h2>
           <AccountForm
             account={account}
             setAccount={setAccount}
+            isEditing={isEditingAccount}
             isSubmitting={isSubmittingAccount}
             submitError={accountSubmitError}
             submitSuccess={accountSubmitSuccess}
             onSubmit={handleAccountSubmit}
+            onCancelEdit={resetAccountForm}
+          />
+          <AccountList
+            accounts={accounts}
+            isLoading={isLoadingAccounts}
+            error={accountListFeedbackError || accountsError}
+            success={accountListFeedbackSuccess}
+            deletingAccountId={deletingAccountId}
+            editingAccountId={editingAccountId}
+            onEdit={handleEditAccount}
+            onDelete={handleDeleteAccount}
           />
         </div>
       );
