@@ -278,7 +278,8 @@ export default function Home() {
   const [accountsError, setAccountsError] = useState("");
   const [accountListFeedbackError, setAccountListFeedbackError] = useState("");
   const [accountListFeedbackSuccess, setAccountListFeedbackSuccess] = useState("");
-  const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
+  const [updatingAccountStatusId, setUpdatingAccountStatusId] = useState<string | null>(null);
+  const activeAccounts = accounts.filter((item) => item.active !== false);
 
   const fetchAccounts = useCallback(async (accessToken: string) => {
     setIsLoadingAccounts(true);
@@ -297,8 +298,7 @@ export default function Home() {
     const payload = await response.json();
     const data = extractAccountList(payload)
       .map((item) => normalizeAccount(item))
-      .filter((item): item is AccountSummary => item !== null)
-      .filter((item) => item.active !== false);
+      .filter((item): item is AccountSummary => item !== null);
 
     setAccounts(data);
     return data;
@@ -386,7 +386,7 @@ export default function Home() {
       setAccountSubmitSuccess("");
       setAccountListFeedbackError("");
       setAccountListFeedbackSuccess("");
-      setDeletingAccountId(null);
+      setUpdatingAccountStatusId(null);
       return;
     }
 
@@ -497,7 +497,7 @@ export default function Home() {
     if (!Number.isInteger(item.installments) || item.installments < 1) return "Parcelas deve ser 1 ou maior.";
     if (item.isPaid && !item.paidFromAccountId) return "Escolha a conta de pagamento.";
 
-    const selectedAccount = accounts.find((account) => account.accountId === item.accountId);
+    const selectedAccount = activeAccounts.find((account) => account.accountId === item.accountId);
     if (item.installments > 1 && selectedAccount?.accountType !== "CREDIT_CARD") {
       return "Despesas parceladas so podem ser lancadas em cartao de credito.";
     }
@@ -656,21 +656,24 @@ export default function Home() {
     setAccountListFeedbackSuccess("");
   };
 
-  const handleDeleteAccount = (accountId: string) => {
+  const handleToggleAccountStatus = (accountId: string) => {
     const selectedAccount = accounts.find((item) => item.accountId === accountId);
 
     if (!selectedAccount) {
-      setAccountListFeedbackError("Nao foi possivel identificar a conta para exclusao.");
+      setAccountListFeedbackError("Nao foi possivel identificar a conta selecionada.");
       setAccountListFeedbackSuccess("");
       return;
     }
 
-    if (!window.confirm(`Excluir a conta "${selectedAccount.name}"?`)) {
+    const isActive = selectedAccount.active !== false;
+    const actionLabel = isActive ? "desativar" : "reativar";
+
+    if (!window.confirm(`${isActive ? "Desativar" : "Reativar"} a conta "${selectedAccount.name}"?`)) {
       return;
     }
 
     void (async () => {
-      setDeletingAccountId(accountId);
+      setUpdatingAccountStatusId(accountId);
       setAccountListFeedbackError("");
       setAccountListFeedbackSuccess("");
       setAccountSubmitError("");
@@ -678,8 +681,8 @@ export default function Home() {
 
       try {
         const accessToken = await getAccessToken();
-        const response = await fetch(`${accountsApiUrl}/${accountId}`, {
-          method: "DELETE",
+        const response = await fetch(`${accountsApiUrl}/${accountId}/${isActive ? "deactivate" : "reactivate"}`, {
+          method: "PATCH",
           headers: {
             Authorization: `Bearer ${accessToken}`,
           },
@@ -689,8 +692,10 @@ export default function Home() {
           throw new Error(
             await getApiErrorMessage(
               response,
-              "Nao foi possivel excluir a conta.",
-              "A conta nao pode ser excluida porque ainda possui vinculos ou nao atende as regras do backend.",
+              `Nao foi possivel ${actionLabel} a conta.`,
+              isActive
+                ? "A conta nao pode ser desativada porque ainda possui vinculos ou nao atende as regras do backend."
+                : "A conta nao pode ser reativada no momento.",
             ),
           );
         }
@@ -701,13 +706,15 @@ export default function Home() {
           resetAccountForm();
         }
 
-        setAccountListFeedbackSuccess("Conta excluida com sucesso.");
+        setAccountListFeedbackSuccess(`Conta ${isActive ? "desativada" : "reativada"} com sucesso.`);
       } catch (deleteError) {
         setAccountListFeedbackError(
-          deleteError instanceof Error ? deleteError.message : "Ocorreu um erro ao excluir a conta.",
+          deleteError instanceof Error
+            ? deleteError.message
+            : `Ocorreu um erro ao ${isActive ? "desativar" : "reativar"} a conta.`,
         );
       } finally {
-        setDeletingAccountId(null);
+        setUpdatingAccountStatusId(null);
         setIsLoadingAccounts(false);
       }
     })();
@@ -826,7 +833,7 @@ export default function Home() {
             setExpense={setExpense}
             isEditing={isEditingExpense}
             isSubmitting={isSubmittingExpense}
-            accounts={accounts}
+            accounts={activeAccounts}
             isLoadingAccounts={isLoadingAccounts}
             accountsError={accountsError}
             onSubmit={handleSubmit}
@@ -885,10 +892,10 @@ export default function Home() {
             isLoading={isLoadingAccounts}
             error={accountListFeedbackError || accountsError}
             success={accountListFeedbackSuccess}
-            deletingAccountId={deletingAccountId}
+            updatingAccountStatusId={updatingAccountStatusId}
             editingAccountId={editingAccountId}
             onEdit={handleEditAccount}
-            onDelete={handleDeleteAccount}
+            onToggleStatus={handleToggleAccountStatus}
           />
         </div>
       );
