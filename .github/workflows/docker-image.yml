@@ -51,9 +51,9 @@ jobs:
             ${{ steps.image.outputs.image }}
             ${{ env.IMAGE_NAME }}:latest
           build-args: |
-            NEXT_PUBLIC_KEYCLOAK_URL=${{ secrets.NEXT_PUBLIC_KEYCLOAK_URL }}
-            NEXT_PUBLIC_KEYCLOAK_REALM=${{ secrets.NEXT_PUBLIC_KEYCLOAK_REALM }}
-            NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=${{ secrets.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID }}
+            NEXT_PUBLIC_KEYCLOAK_URL=${{ vars.NEXT_PUBLIC_KEYCLOAK_URL }}
+            NEXT_PUBLIC_KEYCLOAK_REALM=${{ vars.NEXT_PUBLIC_KEYCLOAK_REALM }}
+            NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=${{ vars.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID }}
 
       - name: Checkout GitOps repo
         uses: actions/checkout@v4
