@@ -1,9 +1,11 @@
-FROM node:20-alpine AS base
+# syntax=docker/dockerfile:1.7
+
+FROM node:24-alpine AS base
 WORKDIR /app
 
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM base AS builder
 ARG NEXT_PUBLIC_KEYCLOAK_URL
