@@ -1,4 +1,4 @@
-name: Build, Push & Update K8s Branch
+name: Build, Push & Update GitOps
 
 on:
   push:
@@ -53,21 +53,22 @@ jobs:
             NEXT_PUBLIC_KEYCLOAK_REALM=${{ secrets.NEXT_PUBLIC_KEYCLOAK_REALM }}
             NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=${{ secrets.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID }}
 
-      - name: Checkout k8s branch
+      - name: Checkout GitOps repo
         uses: actions/checkout@v4
         with:
-          ref: k8s
-          path: k8s-branch
+          repository: italo-jsm/gitops
+          token: ${{ secrets.GITOPS_TOKEN }}
+          path: gitops
 
-      - name: Update deployment image in k8s branch
+      - name: Update deployment image in GitOps
         run: |
-          sed -i -E 's|image: "?ghcr.io/italo-jsm/finance-front:[^"]*"?|image: "${{ steps.image.outputs.image }}"|' k8s-branch/deployment.yaml
+          sed -i -E 's|image: "?ghcr.io/italo-jsm/finance-front:[^"]*"?|image: "${{ steps.image.outputs.image }}"|' gitops/applications/app/deployment.yaml
 
-      - name: Commit and push k8s branch
+      - name: Commit and push GitOps changes
         run: |
-          cd k8s-branch
+          cd gitops
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add deployment.yaml
+          git add applications/app/deployment.yaml
           git commit -m "chore: update finance-front image to ${{ steps.image.outputs.tag }}" || echo "No changes to commit"
-          git push origin HEAD:k8s
+          git push
