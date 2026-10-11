@@ -50,10 +50,14 @@ export function Sidebar({ activeMenu, setActiveMenu, sidebarOpen, setSidebarOpen
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-slate-700">
         <h2 className="text-lg font-bold">Menu</h2>
         <button
+          type="button"
+          aria-label="Fechar menu"
           onClick={() => setSidebarOpen(false)}
-          className="rounded-md bg-slate-100 px-3 py-1 text-sm font-medium text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:hidden"
+          className="rounded-md bg-slate-100 p-2 text-slate-800 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:hidden"
         >
-          Fechar
+          <svg aria-hidden="true" className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
+            <path d="m6 6 12 12M6 18 18 6" />
+          </svg>
         </button>
       </div>
       <nav className="space-y-1 p-4">
