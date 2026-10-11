@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { AuthScreen } from "@/components/AuthScreen";
 import { AccountForm } from "@/components/AccountForm";
 import { AccountList } from "@/components/AccountList";
 import type { Expense } from "@/types/expense";
@@ -255,7 +256,7 @@ function buildExpensePayload(expense: Expense) {
 }
 
 export default function Home() {
-  const { status, error, login, configured, profile, tokenParsed, getAccessToken } = useAuth();
+  const { status, profile, tokenParsed, getAccessToken } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuItem>("overview");
   const [expense, setExpense] = useState<Expense>(emptyExpense);
@@ -780,44 +781,12 @@ export default function Home() {
     tokenParsed?.name ||
     "usuário";
 
-  if (status === "loading") {
+  if (status !== "authenticated") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 text-white">
-        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur">
-          <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Finance Front</p>
-          <h1 className="mt-4 text-3xl font-semibold">Validando sua sessão</h1>
-          <p className="mt-3 text-sm text-slate-300">Estamos conferindo se você já tem uma autenticação ativa no Keycloak.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === "unauthenticated" || status === "error") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#164e63,_#0f172a_42%,_#020617_100%)] px-4 py-10 text-white">
-        <div className="w-full max-w-lg rounded-[2rem] border border-white/10 bg-slate-950/70 p-8 shadow-2xl backdrop-blur">
-          <p className="text-sm uppercase tracking-[0.3em] text-cyan-300">Finance Front</p>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight">Acesse seu painel com Keycloak</h1>
-          <p className="mt-4 text-sm leading-6 text-slate-300">
-            O dashboard agora exige autenticacao centralizada. Entre com sua conta para visualizar e gerenciar suas despesas.
-          </p>
-          <div className="mt-6 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4 text-sm text-cyan-50">
-            {status === "error"
-              ? error
-              : "Use o mesmo usuario provisionado no realm configurado para esta aplicacao."}
-          </div>
-          <button
-            onClick={() => void login()}
-            disabled={!configured}
-            className="mt-6 inline-flex w-full items-center justify-center rounded-2xl bg-cyan-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
-          >
-            Entrar com Keycloak
-          </button>
-          <p className="mt-4 text-xs text-slate-400">
-            Configure as variaveis em <code>.env.local</code> usando o arquivo <code>.env.example</code>.
-          </p>
-        </div>
-      </div>
+      <AuthScreen
+        failed={status === "error"}
+        onRetry={() => window.location.reload()}
+      />
     );
   }
 

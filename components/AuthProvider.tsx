@@ -66,7 +66,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
       try {
         const authenticated = await keycloak.init({
-          onLoad: "check-sso",
+          onLoad: "login-required",
           pkceMethod: "S256",
           checkLoginIframe: false,
         });

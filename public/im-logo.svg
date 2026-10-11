@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 104" role="img" aria-labelledby="title">
+  <title id="title">IM — Italo Mariano</title>
+  <g fill="#111111">
+    <path d="M16 16h36v8H40v56h12v8H16v-8h12V24H16z"/>
+    <path d="M68 88V16h12l26 42 26-42h12v72h-12V38l-26 40-26-40v50z"/>
+  </g>
+</svg>

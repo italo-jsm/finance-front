@@ -21,6 +21,10 @@ No cliente do Keycloak, libere pelo menos:
 
 ## Getting Started
 
+O login redireciona diretamente ao Keycloak. A logo IM e o tema minimalista
+estão em [`keycloak/`](keycloak/README.md), com uma prévia e instruções de
+instalação no servidor de autenticação.
+
 First, run the development server:
 
 ```bash
