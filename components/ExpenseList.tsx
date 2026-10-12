@@ -3,8 +3,9 @@
 import { Expense, expenseCategoryOptions } from "../types/expense";
 
 import { ExpensePaymentAction, type ExpensePaymentProps } from './ExpensePaymentAction';
+import { ExpenseReversalAction, reversedExpenseClass, type ExpenseReversalProps } from "./ExpenseReversalAction";
 
-type ExpenseListProps = ExpensePaymentProps & {
+type ExpenseListProps = ExpenseReversalProps & ExpensePaymentProps & {
   expenses: Expense[];
   isLoading: boolean;
   error: string;
@@ -12,7 +13,7 @@ type ExpenseListProps = ExpensePaymentProps & {
   onDelete: (index: number) => void;
 };
 
-export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onPay, paymentAccounts, paymentBlockedIds, paymentBusy }: ExpenseListProps) {
+export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onPay, paymentAccounts, paymentBlockedIds, paymentBusy, onReverse, reversingId, reversalBlockedIds }: ExpenseListProps) {
   if (isLoading) {
     return <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Carregando despesas...</p>;
   }
@@ -30,7 +31,7 @@ export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onPa
       <h3 className="text-lg font-semibold">Últimas despesas</h3>
       <ul className="mt-3 space-y-2">
         {expenses.map((item, index) => (
-          <li key={`${item.date}-${item.description}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">
+          <li key={`${item.date}-${item.description}-${index}`} className={`rounded-lg border p-3 ${item.reversedDate ? reversedExpenseClass : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"}`}>
             {/*
               Old local items may not have the new fields yet, so we keep the rendering resilient.
             */}
@@ -47,6 +48,7 @@ export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onPa
               </div>
               <div className="flex flex-wrap justify-end gap-2">
                 <ExpensePaymentAction expense={item} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(item.expenseId ?? '')} />
+                <ExpenseReversalAction expense={item} busy={reversingId === item.expenseId} blocked={reversalBlockedIds.has(item.expenseId ?? "")} onReverse={onReverse} />
                 <button
                   type="button"
                   onClick={() => onEdit(index)}

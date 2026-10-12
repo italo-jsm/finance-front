@@ -3,7 +3,9 @@
 import { useState } from "react";
 import type { AccountSummary } from "@/types/account";
 import { Expense, expenseCategoryOptions } from "../types/expense";
+
 import { ExpensePaymentAction, type ExpensePaymentProps } from './ExpensePaymentAction';
+import { ExpenseReversalAction, reversedExpenseClass, type ExpenseReversalProps } from "./ExpenseReversalAction";
 
 export type ExpenseHistoryFilters = {
   dateFrom: string;
@@ -12,7 +14,7 @@ export type ExpenseHistoryFilters = {
   accountId: string;
 };
 
-type ExpenseHistoryTableProps = ExpensePaymentProps & {
+type ExpenseHistoryTableProps = ExpenseReversalProps & ExpensePaymentProps & {
   expenses: Expense[];
   accounts: AccountSummary[];
   isLoading: boolean;
@@ -41,6 +43,9 @@ export function ExpenseHistoryTable({
   hasSearched,
   onSearch,
   onEdit, onPay, paymentAccounts, paymentBlockedIds, paymentBusy,
+  onReverse,
+  reversingId,
+  reversalBlockedIds,
 }: ExpenseHistoryTableProps) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -193,7 +198,7 @@ export function ExpenseHistoryTable({
             {sortedExpenses.map((expense, index) => (
               <article
                 key={expense.expenseId ?? `${expense.date}-${expense.description}-${index}`}
-                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-950"
+                className={`rounded-2xl border p-4 shadow-sm ${expense.reversedDate ? reversedExpenseClass : "border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950"}`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -216,9 +221,10 @@ export function ExpenseHistoryTable({
                   </div>
                 </dl>
 
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                   <ExpensePaymentAction expense={expense} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(expense.expenseId ?? '')} />
-                    {expense.expenseId ? (
+                  <ExpenseReversalAction expense={expense} busy={reversingId === expense.expenseId} blocked={reversalBlockedIds.has(expense.expenseId ?? "")} onReverse={onReverse} />
+                  {expense.expenseId ? (
                     <button
                       type="button"
                       onClick={() => onEdit(expense.expenseId as string)}
@@ -249,7 +255,7 @@ export function ExpenseHistoryTable({
                 </thead>
                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                   {sortedExpenses.map((expense, index) => (
-                    <tr key={expense.expenseId ?? `${expense.date}-${expense.description}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-900/70">
+                    <tr key={expense.expenseId ?? `${expense.date}-${expense.description}-${index}`} className={expense.reversedDate ? reversedExpenseClass : "hover:bg-slate-50 dark:hover:bg-slate-900/70"}>
                       <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">{formatDate(expense.date)}</td>
                       <td className="px-4 py-3 text-sm font-medium text-slate-900 dark:text-slate-100">{expense.description}</td>
                       <td className="px-4 py-3 text-sm text-slate-700 dark:text-slate-300">
@@ -260,18 +266,21 @@ export function ExpenseHistoryTable({
                         R$ {expense.value.toFixed(2)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <ExpensePaymentAction expense={expense} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(expense.expenseId ?? '')} />
-                    {expense.expenseId ? (
-                          <button
-                            type="button"
-                            onClick={() => onEdit(expense.expenseId as string)}
-                            className="rounded-md border border-blue-500 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:border-blue-400 dark:text-blue-200 dark:hover:bg-blue-900/60"
-                          >
-                            Editar
-                          </button>
-                        ) : (
-                          <span className="text-xs text-slate-400">Sem acao</span>
-                        )}
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                          <ExpensePaymentAction expense={expense} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(expense.expenseId ?? '')} />
+                  <ExpenseReversalAction expense={expense} busy={reversingId === expense.expenseId} blocked={reversalBlockedIds.has(expense.expenseId ?? "")} onReverse={onReverse} />
+                          {expense.expenseId ? (
+                            <button
+                              type="button"
+                              onClick={() => onEdit(expense.expenseId as string)}
+                              className="rounded-md border border-blue-500 px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 dark:border-blue-400 dark:text-blue-200 dark:hover:bg-blue-900/60"
+                            >
+                              Editar
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-400">Sem acao</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

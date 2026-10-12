@@ -14,6 +14,7 @@ type AccountListProps = {
   editingAccountId: string | null;
   onEdit: (accountId: string) => void;
   onToggleStatus: (accountId: string) => void;
+  loadAccounts?: (token: string, signal?: AbortSignal) => Promise<AccountSummary[]>;
 };
 
 function getTypeLabel(accountType: AccountSummary["accountType"]) {
@@ -48,6 +49,7 @@ export function AccountList({
   editingAccountId,
   onEdit,
   onToggleStatus,
+  loadAccounts,
 }: AccountListProps) {
   const [selectedAccount, setSelectedAccount] = useState<AccountSummary | null>(null);
   const activeAccounts = accounts.filter((account) => account.active !== false);
@@ -192,7 +194,7 @@ export function AccountList({
           <p role="alert">A conta {selectedAccount.name} não está mais disponível. A visualização foi encerrada.</p>
           <button type="button" className="mt-3 rounded-md border border-slate-400 px-3 py-2 text-sm" onClick={() => setSelectedAccount(null)}>Fechar</button>
         </div> : <AccountMovementsSection key={selectedAccount.accountId} account={selectedAccount}
-          getAccessToken={getAccessToken} onClose={() => setSelectedAccount(null)} />)}
+          getAccessToken={getAccessToken} loadAccounts={loadAccounts} onClose={() => setSelectedAccount(null)} />)}
     </section>
   );
 }

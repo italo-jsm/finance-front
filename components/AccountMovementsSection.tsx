@@ -7,10 +7,10 @@ const origins = { OPENING: 'Saldo inicial', RECEIPT: 'Recebimento', PAYMENT: 'Pa
 const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const buttonClass = 'rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600';
 
-type Props = { account: AccountSummary; getAccessToken: () => Promise<string>; onClose: () => void };
+type Props = { account: AccountSummary; getAccessToken: () => Promise<string>; onClose: () => void; loadAccounts?: (token: string, signal?: AbortSignal) => Promise<AccountSummary[]> };
 
-export function AccountMovementsSection({ account, getAccessToken, onClose }: Props) {
-  const state = useAccountMovements(account, getAccessToken);
+export function AccountMovementsSection({ account, getAccessToken, onClose, loadAccounts }: Props) {
+  const state = useAccountMovements(account, getAccessToken, loadAccounts);
   return (
     <section aria-label={`Movimentações de ${account.name}`} className="mt-6 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
       <div className="flex flex-wrap items-start justify-between gap-3">

@@ -74,7 +74,7 @@ test('sessão encerrada enquanto aguarda token impede envio', async () => {
   r.render().open(expense); const pending = r.render().submit(payload); r.unmount(); token('t'); await pending; assert.equal(calls, 0);
 });
 test('listagens exibem ação compartilhada inclusive tabela e cartões do histórico', () => {
-  const props = { expenses: [expense], accounts: [account], paymentAccounts: [account], isLoading: false, error: '', hasSearched: true, onSearch() {}, onEdit() {}, onDelete() {}, onPay() {} };
+  const props = { expenses: [expense], accounts: [account], paymentAccounts: [account], reversalBlockedIds: new Set(), reversingId: null, onReverse() {}, isLoading: false, error: '', hasSearched: true, onSearch() {}, onEdit() {}, onDelete() {}, onPay() {} };
   const { ExpenseList } = require('../components/ExpenseList.tsx');
   const { ExpenseHistoryTable } = require('../components/ExpenseHistoryTable.tsx');
   assert.match(markup(ExpenseList, props), /Marcar como paga/);
