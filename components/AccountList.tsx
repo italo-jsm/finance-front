@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { AccountMovementsSection } from "./AccountMovementsSection";
 import { accountTypeOptions, type AccountSummary } from "@/types/account";
 
 type AccountListProps = {
   accounts: AccountSummary[];
+  getAccessToken: () => Promise<string>;
   isLoading: boolean;
   error: string;
   success: string;
@@ -37,6 +40,7 @@ function buildDetails(account: AccountSummary) {
 
 export function AccountList({
   accounts,
+  getAccessToken,
   isLoading,
   error,
   success,
@@ -45,6 +49,7 @@ export function AccountList({
   onEdit,
   onToggleStatus,
 }: AccountListProps) {
+  const [selectedAccount, setSelectedAccount] = useState<AccountSummary | null>(null);
   const activeAccounts = accounts.filter((account) => account.active !== false);
   const inactiveAccounts = accounts.filter((account) => account.active === false);
 
@@ -99,6 +104,11 @@ export function AccountList({
                         </div>
 
                         <div className="flex flex-wrap gap-2">
+                          {account.accountType === "CHECKING_ACCOUNT" && <button
+                            type="button"
+                            onClick={() => setSelectedAccount(account)}
+                            className="rounded-md border border-slate-400 px-3 py-1 text-xs font-semibold"
+                          >Ver movimentações</button>}
                           <button
                             type="button"
                             onClick={() => onEdit(account.accountId)}
@@ -177,6 +187,12 @@ export function AccountList({
           </div>
         </div>
       ) : null}
+      {selectedAccount && (!isLoading && !error && !activeAccounts.some(item => item.accountId === selectedAccount.accountId && item.accountType === "CHECKING_ACCOUNT") ?
+        <div className="mt-6 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+          <p role="alert">A conta {selectedAccount.name} não está mais disponível. A visualização foi encerrada.</p>
+          <button type="button" className="mt-3 rounded-md border border-slate-400 px-3 py-2 text-sm" onClick={() => setSelectedAccount(null)}>Fechar</button>
+        </div> : <AccountMovementsSection key={selectedAccount.accountId} account={selectedAccount}
+          getAccessToken={getAccessToken} onClose={() => setSelectedAccount(null)} />)}
     </section>
   );
 }
