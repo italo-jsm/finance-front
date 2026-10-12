@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useIncomeSources } from '@/hooks/useIncomeSources';
 import { IncomeSourceApiError } from '@/lib/incomeSourcesApi';
-import { emptyIncomeSourceForm, incomeSourceTypeLabels, type IncomeSourceFormValues } from '@/types/incomeSource';
+import { emptyIncomeSourceForm, type IncomeSourceFormValues } from '@/types/incomeSource';
+import { buildIncomeSourcePayload, incomeSourceToForm } from '@/lib/incomeSourceForm';
 import { IncomeSourceList } from './IncomeSourceList';
 import { IncomeSourceForm } from './IncomeSourceForm';
 
@@ -29,7 +30,7 @@ export function IncomeSourcesSection() {
     try {
       const source = await api.get(sourceId, controller.signal);
       if (controller.signal.aborted || !mounted.current) return;
-      setId(source.id); setValues({ name: source.name, type: source.type, description: source.description ?? '' }); setMode('edit');
+      setId(source.id); setValues(incomeSourceToForm(source)); setMode('edit');
     } catch (error) {
       if (!controller.signal.aborted && mounted.current) {
         setError(error instanceof Error ? error.message : 'Não foi possível carregar a fonte de renda.');
@@ -40,10 +41,9 @@ export function IncomeSourcesSection() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving.current) return;
-    if (!values.name.trim() || !values.type || !(values.type in incomeSourceTypeLabels)) { setError('Informe o nome e selecione um tipo válido.'); return; }
-    saving.current = true; setSubmitting(true); setError('');
-    const payload = { name: values.name.trim(), type: values.type, description: values.description.trim() ? values.description : null };
     try {
+      const payload = buildIncomeSourcePayload(values);
+      saving.current = true; setSubmitting(true); setError('');
       if (mode === 'edit') await api.update(id, payload); else await api.create(payload);
       if (!mounted.current) return;
       setMode('list'); setId(''); setValues(emptyIncomeSourceForm); setSuccess('Fonte de renda salva com sucesso.');
