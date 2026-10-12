@@ -28,6 +28,10 @@ function buildDetails(account: AccountSummary) {
     details.push(`Vence dia ${account.dueDay}`);
   }
 
+  if (account.accountType === "CHECKING_ACCOUNT" && typeof account.balance === "number") {
+    details.push(`Saldo atual: ${account.balance.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`);
+  }
+
   return details.join(" • ");
 }
 
