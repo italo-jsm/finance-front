@@ -25,6 +25,10 @@ export type Expense = {
   isPaid: boolean;
   paidFromAccountId: string;
   paymentMethod?: string | null;
+  paymentStatus?: 'PENDING' | 'PAID' | 'PARTIALLY_PAID' | 'REVERSED';
+  canPay?: boolean;
+  totalPaid?: number;
+  payment?: { id: string; amount: number; paymentDate: string; paymentMethod: string; paidFromAccountId: string | null; movementId: string | null } | null;
   reversedDate?: string | null;
   canReverse?: boolean;
 };

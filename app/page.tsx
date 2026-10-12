@@ -19,6 +19,10 @@ import { ExpenseHistoryTable, type ExpenseHistoryFilters } from "@/components/Ex
 import { buildAccountPayload } from "@/lib/accountForm";
 import { accountsApiUrl, expensesApiUrl } from "@/lib/config";
 
+import { expensePaymentFields } from '@/lib/expensePayment';
+import { useExpensePayment } from '@/hooks/useExpensePayment';
+import { ExpensePaymentForm } from '@/components/ExpensePaymentForm';
+
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -75,6 +79,10 @@ type ExpenseApiItem = Partial<{
   paymentDate: string | null;
   paidFromAccountId: string | null;
   isPaid: boolean;
+  paymentStatus: Expense['paymentStatus'];
+  canPay: boolean;
+  totalPaid: number;
+  payment: Expense['payment'];
   reversedDate: string | null;
   canReverse: boolean;
 }>;
@@ -232,7 +240,6 @@ function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]
   const accountId = apiExpense.accountId ?? "";
   const matchingAccount = accounts.find((account) => account.accountId === accountId);
   const amount = apiExpense.amount ?? apiExpense.value ?? 0;
-  const paymentSource = apiExpense.paidFromAccountId ?? "";
 
   return {
     expenseId: apiExpense.expenseId ?? apiExpense.id,
@@ -243,11 +250,7 @@ function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]
     installments: apiExpense.installments ?? 1,
     accountId,
     accountName: apiExpense.accountName ?? matchingAccount?.name ?? "",
-    isPaid: apiExpense.isPaid ?? Boolean(apiExpense.paymentDate || paymentSource),
-    paidFromAccountId: paymentSource,
-    paymentMethod: apiExpense.paymentMethod ?? null,
-    reversedDate: apiExpense.reversedDate ?? null,
-    canReverse: apiExpense.canReverse === true,
+    ...expensePaymentFields(apiExpense),
   };
 }
 
@@ -290,6 +293,7 @@ export default function Home() {
   const [accountListFeedbackError, setAccountListFeedbackError] = useState("");
   const [accountListFeedbackSuccess, setAccountListFeedbackSuccess] = useState("");
   const [updatingAccountStatusId, setUpdatingAccountStatusId] = useState<string | null>(null);
+  const [paymentDataVersion, setPaymentDataVersion] = useState(0);
   const historyFilters = useRef<ExpenseHistoryFilters | null>(null);
   const recentVersion = useRef(0);
   const historyVersion = useRef(0);
@@ -396,6 +400,7 @@ export default function Home() {
   }, [accounts, fetchExpenses, getAccessToken, status]);
 
   const refreshAfterReversal = async () => {
+    setPaymentDataVersion(value => value + 1);
     const session = sessionVersion.current;
     const recent = ++recentVersion.current;
     const history = ++historyVersion.current;
@@ -460,6 +465,11 @@ export default function Home() {
       if (recent === recentVersion.current) setIsLoadingExpenses(false);
       if (filters && history === historyVersion.current) setIsLoadingExpenseHistory(false);
     }
+  };
+  const payment = useExpensePayment(getAccessToken, refreshAfterReversal, status);
+  const paymentProps = {
+    onPay: payment.open, paymentAccounts: accounts,
+    paymentBusy: payment.busy, paymentBlockedIds: payment.blockedIds,
   };
   const reversal = useExpenseReversal(getAccessToken, refreshAfterReversal, status);
   const reversalProps = {
@@ -941,6 +951,7 @@ export default function Home() {
           />
           {reversalFeedback}
           <ExpenseList
+            {...paymentProps}
             expenses={expenses}
             isLoading={isLoadingExpenses}
             error={expensesError}
@@ -957,6 +968,7 @@ export default function Home() {
         <div>
           {reversalFeedback}
           <ExpenseHistoryTable
+            {...paymentProps}
             expenses={expenseHistory}
             accounts={accounts}
             isLoading={isLoadingExpenseHistory}
@@ -1006,7 +1018,7 @@ export default function Home() {
             onSubmit={handleAccountSubmit}
             onCancelEdit={resetAccountForm}
           />
-          <AccountList
+          <AccountList key={paymentDataVersion}
             getAccessToken={getAccessToken}
             accounts={accounts}
             isLoading={isLoadingAccounts}
@@ -1045,7 +1057,12 @@ export default function Home() {
         <div className="flex flex-1 flex-col sm:ml-64">
           <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeMenu={activeMenu} />
 
-          <main className="p-4 sm:p-6">{renderContent()}</main>
+          <main className="p-4 sm:p-6">{payment.message && <div role="status" className="mb-4 rounded-md border p-3">
+              <p>{payment.message}</p>
+              <button type="button" disabled={payment.busy} onClick={() => { void payment.reload(); }} className="mt-2 rounded-md border px-3 py-2 disabled:opacity-60">Atualizar dados</button>
+            </div>}
+            {payment.selected && <ExpensePaymentForm key={payment.selected.expenseId} expense={payment.selected} accounts={accounts} busy={payment.busy} error={payment.message} onSubmit={payload => { void payment.submit(payload); }} onCancel={payment.cancel} />}
+            {renderContent()}</main>
         </div>
       </div>
     </div>

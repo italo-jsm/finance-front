@@ -2,9 +2,10 @@
 
 import { Expense, expenseCategoryOptions } from "../types/expense";
 
+import { ExpensePaymentAction, type ExpensePaymentProps } from './ExpensePaymentAction';
 import { ExpenseReversalAction, reversedExpenseClass, type ExpenseReversalProps } from "./ExpenseReversalAction";
 
-type ExpenseListProps = ExpenseReversalProps & {
+type ExpenseListProps = ExpenseReversalProps & ExpensePaymentProps & {
   expenses: Expense[];
   isLoading: boolean;
   error: string;
@@ -12,7 +13,7 @@ type ExpenseListProps = ExpenseReversalProps & {
   onDelete: (index: number) => void;
 };
 
-export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onReverse, reversingId, reversalBlockedIds }: ExpenseListProps) {
+export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onPay, paymentAccounts, paymentBlockedIds, paymentBusy, onReverse, reversingId, reversalBlockedIds }: ExpenseListProps) {
   if (isLoading) {
     return <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Carregando despesas...</p>;
   }
@@ -46,6 +47,7 @@ export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onRe
                 <p className="text-base font-bold">R$ {item.value.toFixed(2)}</p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
+                <ExpensePaymentAction expense={item} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(item.expenseId ?? '')} />
                 <ExpenseReversalAction expense={item} busy={reversingId === item.expenseId} blocked={reversalBlockedIds.has(item.expenseId ?? "")} onReverse={onReverse} />
                 <button
                   type="button"

@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import type { AccountSummary } from "@/types/account";
-import { Expense, expenseCategoryOptions } from "@/types/expense";
+import { Expense, expenseCategoryOptions } from "../types/expense";
 
+import { ExpensePaymentAction, type ExpensePaymentProps } from './ExpensePaymentAction';
 import { ExpenseReversalAction, reversedExpenseClass, type ExpenseReversalProps } from "./ExpenseReversalAction";
 
 export type ExpenseHistoryFilters = {
@@ -13,7 +14,7 @@ export type ExpenseHistoryFilters = {
   accountId: string;
 };
 
-type ExpenseHistoryTableProps = ExpenseReversalProps & {
+type ExpenseHistoryTableProps = ExpenseReversalProps & ExpensePaymentProps & {
   expenses: Expense[];
   accounts: AccountSummary[];
   isLoading: boolean;
@@ -41,7 +42,7 @@ export function ExpenseHistoryTable({
   error,
   hasSearched,
   onSearch,
-  onEdit,
+  onEdit, onPay, paymentAccounts, paymentBlockedIds, paymentBusy,
   onReverse,
   reversingId,
   reversalBlockedIds,
@@ -221,6 +222,7 @@ export function ExpenseHistoryTable({
                 </dl>
 
                 <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                  <ExpensePaymentAction expense={expense} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(expense.expenseId ?? '')} />
                   <ExpenseReversalAction expense={expense} busy={reversingId === expense.expenseId} blocked={reversalBlockedIds.has(expense.expenseId ?? "")} onReverse={onReverse} />
                   {expense.expenseId ? (
                     <button
@@ -265,7 +267,8 @@ export function ExpenseHistoryTable({
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-wrap items-center justify-end gap-2">
-                          <ExpenseReversalAction expense={expense} busy={reversingId === expense.expenseId} blocked={reversalBlockedIds.has(expense.expenseId ?? "")} onReverse={onReverse} />
+                          <ExpensePaymentAction expense={expense} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(expense.expenseId ?? '')} />
+                  <ExpenseReversalAction expense={expense} busy={reversingId === expense.expenseId} blocked={reversalBlockedIds.has(expense.expenseId ?? "")} onReverse={onReverse} />
                           {expense.expenseId ? (
                             <button
                               type="button"
