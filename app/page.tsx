@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthScreen } from "@/components/AuthScreen";
+import { IncomesSection } from "@/components/IncomesSection";
 import { IncomeSourcesSection } from "@/components/IncomeSourcesSection";
 import { AccountForm } from "@/components/AccountForm";
 import { AccountList } from "@/components/AccountList";
@@ -14,6 +15,7 @@ import { Header } from "@/components/Header";
 import { ExpenseForm } from "@/components/ExpenseForm";
 import { ExpenseList } from "@/components/ExpenseList";
 import { ExpenseHistoryTable, type ExpenseHistoryFilters } from "@/components/ExpenseHistoryTable";
+import { buildAccountPayload } from "@/lib/accountForm";
 import { accountsApiUrl, expensesApiUrl } from "@/lib/config";
 
 function getTodayDate() {
@@ -82,6 +84,7 @@ type AccountApiItem = Partial<{
   closingDay: number | string | null;
   dueDay: number | string | null;
   active: boolean;
+  balance: number | null;
 }>;
 
 function toOptionalDay(value: number | string | null | undefined) {
@@ -218,6 +221,7 @@ function normalizeAccount(apiAccount: AccountApiItem): AccountSummary | null {
     closingDay: toOptionalDay(apiAccount.closingDay),
     dueDay: toOptionalDay(apiAccount.dueDay),
     active: apiAccount.active ?? true,
+    balance: apiAccount.balance,
   };
 }
 
@@ -650,6 +654,7 @@ export default function Home() {
       accountType: selectedAccount.accountType,
       closingDay: selectedAccount.closingDay ? String(selectedAccount.closingDay) : "",
       dueDay: selectedAccount.dueDay ? String(selectedAccount.dueDay) : "",
+      initialBalance: "",
     });
     setEditingAccountId(accountId);
     setAccountSubmitError("");
@@ -747,24 +752,20 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({
-          name: account.name.trim(),
-          accountType: account.accountType,
-          closingDay: account.accountType === "CREDIT_CARD" ? Number(account.closingDay) : null,
-          dueDay:
-            account.accountType === "CREDIT_CARD" || account.accountType === "FIXED_BILL"
-              ? Number(account.dueDay)
-              : null,
-        }),
+        body: JSON.stringify(buildAccountPayload(account, isEditingAccount)),
       });
 
       if (!response.ok) {
         throw new Error(await getApiErrorMessage(response, "Nao foi possivel salvar a conta."));
       }
 
-      await fetchAccounts(accessToken);
       resetAccountForm();
       setAccountSubmitSuccess(isEditingAccount ? "Conta atualizada com sucesso." : "Conta salva com sucesso.");
+      try {
+        await fetchAccounts(accessToken);
+      } catch {
+        setAccountsError("Conta salva, mas não foi possível atualizar a lista. Recarregue a página para consultar os dados atuais.");
+      }
     } catch (submitError) {
       setAccountSubmitError(
         submitError instanceof Error ? submitError.message : "Ocorreu um erro ao salvar a conta.",
@@ -841,6 +842,17 @@ export default function Home() {
           <p className="mt-2 text-slate-600 dark:text-slate-300">Em breve teremos dados de relatórios aqui.</p>
         </div>
       );
+    }
+
+    if (activeMenu === "incomes") {
+      return <IncomesSection accounts={accounts} accountsLoading={isLoadingAccounts} accountsError={accountsError}
+        onAccountsChange={async () => {
+          try { await fetchAccounts(await getAccessToken()); }
+          catch (error) {
+            setAccountsError("Não foi possível atualizar as contas. Recarregue a página para consultar o saldo atual.");
+            throw error;
+          } finally { setIsLoadingAccounts(false); }
+        }} />;
     }
 
     if (activeMenu === "incomeSources") return <IncomeSourcesSection />;

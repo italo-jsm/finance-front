@@ -72,6 +72,17 @@ export function AccountForm({
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{selectedType?.helperText}</p>
       </div>
 
+      {!isEditing && account.accountType === "CHECKING_ACCOUNT" ? (
+        <div>
+          <label htmlFor="initial-balance" className="block text-sm font-medium">Saldo inicial (R$) *</label>
+          <input required id="initial-balance" type="text" inputMode="decimal" disabled={isSubmitting}
+            value={account.initialBalance} onChange={(event) => setAccount({ ...account, initialBalance: event.target.value })}
+            aria-describedby="initial-balance-help" placeholder="Ex: 1000,00"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
+          <p id="initial-balance-help" className="mt-1 text-sm text-slate-500 dark:text-slate-400">Pode ser zero ou negativo. Use vírgula ou ponto decimal, sem separadores de milhar. O saldo inicial não poderá ser alterado após salvar.</p>
+        </div>
+      ) : null}
+
       {showClosingDay ? (
         <div>
           <label htmlFor="closing-day" className="block text-sm font-medium text-slate-700 dark:text-slate-300">

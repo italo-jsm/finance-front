@@ -17,6 +17,7 @@ export function Sidebar({ activeMenu, setActiveMenu, sidebarOpen, setSidebarOpen
     { key: "overview", label: "Visão geral" },
     { key: "accounts", label: "Contas" },
     { key: "incomeSources", label: "Fontes de renda" },
+    { key: "incomes", label: "Recebimentos" },
     { key: "reports", label: "Relatórios" },
   ];
   const transactionsSectionActive = activeMenu === "transactions" || activeMenu === "expenseHistory";

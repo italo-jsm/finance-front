@@ -7,6 +7,7 @@ export type AccountSummary = {
   closingDay?: number | null;
   dueDay?: number | null;
   active?: boolean;
+  balance?: number | null;
 };
 
 export type AccountTypeOption = {
@@ -20,6 +21,7 @@ export type AccountFormValues = {
   accountType: AccountType;
   closingDay: string;
   dueDay: string;
+  initialBalance: string;
 };
 
 export const accountTypeOptions: AccountTypeOption[] = [
@@ -45,4 +47,5 @@ export const emptyAccountForm: AccountFormValues = {
   accountType: "CHECKING_ACCOUNT",
   closingDay: "",
   dueDay: "",
+  initialBalance: "",
 };
