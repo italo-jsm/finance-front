@@ -8,6 +8,17 @@ export function IncomeSourceForm({ values, onChange, onSubmit, onCancel, editing
     <fieldset disabled={submitting} className="space-y-4 disabled:opacity-70">
       <div><label htmlFor="income-source-name" className="block text-sm font-medium">Nome *</label><input required id="income-source-name" value={values.name} onChange={event => onChange({ ...values, name: event.target.value })} placeholder="Ex: Salário PJ" className={fieldClass} /></div>
       <div><label htmlFor="income-source-type" className="block text-sm font-medium">Tipo *</label><select required id="income-source-type" value={values.type} onChange={event => onChange({ ...values, type: event.target.value as IncomeSourceFormValues['type'] })} className={fieldClass}><option value="">Selecione</option>{Object.entries(incomeSourceTypeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="income-source-day" className="block text-sm font-medium">Dia previsto do recebimento *</label>
+          <input required id="income-source-day" type="number" min={1} max={31} step={1} value={values.expectedDay} onChange={event => onChange({ ...values, expectedDay: event.target.value })} placeholder="Ex: 10" className={fieldClass} />
+        </div>
+        <div>
+          <label htmlFor="income-source-amount" className="block text-sm font-medium">Valor estimado (R$) *</label>
+          <input required id="income-source-amount" type="text" inputMode="decimal" aria-describedby="income-source-amount-help" value={values.estimatedAmount} onChange={event => onChange({ ...values, estimatedAmount: event.target.value })} placeholder="Ex: 7500,00" className={fieldClass} />
+          <p id="income-source-amount-help" className="mt-1 text-sm text-slate-600 dark:text-slate-300">Use vírgula ou ponto decimal, sem separadores de milhar. Ex: 7500,00.</p>
+        </div>
+      </div>
       <div><label htmlFor="income-source-description" className="block text-sm font-medium">Descrição (opcional)</label><textarea id="income-source-description" rows={3} value={values.description} onChange={event => onChange({ ...values, description: event.target.value })} className={fieldClass} /></div>
     </fieldset>
     {error && <p role="alert" className="text-red-700 dark:text-red-300">{error}</p>}
