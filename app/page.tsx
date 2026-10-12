@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { useExpenseReversal } from "@/hooks/useExpenseReversal";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthScreen } from "@/components/AuthScreen";
 import { IncomesSection } from "@/components/IncomesSection";
@@ -74,6 +75,8 @@ type ExpenseApiItem = Partial<{
   paymentDate: string | null;
   paidFromAccountId: string | null;
   isPaid: boolean;
+  reversedDate: string | null;
+  canReverse: boolean;
 }>;
 
 type AccountApiItem = Partial<{
@@ -243,6 +246,8 @@ function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]
     isPaid: apiExpense.isPaid ?? Boolean(apiExpense.paymentDate || paymentSource),
     paidFromAccountId: paymentSource,
     paymentMethod: apiExpense.paymentMethod ?? null,
+    reversedDate: apiExpense.reversedDate ?? null,
+    canReverse: apiExpense.canReverse === true,
   };
 }
 
@@ -285,9 +290,16 @@ export default function Home() {
   const [accountListFeedbackError, setAccountListFeedbackError] = useState("");
   const [accountListFeedbackSuccess, setAccountListFeedbackSuccess] = useState("");
   const [updatingAccountStatusId, setUpdatingAccountStatusId] = useState<string | null>(null);
+  const historyFilters = useRef<ExpenseHistoryFilters | null>(null);
+  const recentVersion = useRef(0);
+  const historyVersion = useRef(0);
+  const accountVersion = useRef(0);
+  const sessionVersion = useRef(0);
   const activeAccounts = accounts.filter((item) => item.active !== false);
 
   const fetchAccounts = useCallback(async (accessToken: string) => {
+    const version = ++accountVersion.current;
+    const session = sessionVersion.current;
     setIsLoadingAccounts(true);
     setAccountsError("");
 
@@ -306,7 +318,10 @@ export default function Home() {
       .map((item) => normalizeAccount(item))
       .filter((item): item is AccountSummary => item !== null);
 
-    setAccounts(data);
+    if (session === sessionVersion.current && version === accountVersion.current) {
+      setAccounts(data);
+      setIsLoadingAccounts(false);
+    }
     return data;
   }, []);
 
@@ -330,26 +345,30 @@ export default function Home() {
   const refreshRecentExpenses = useCallback(async () => {
     if (status !== "authenticated") return;
 
+    const version = ++recentVersion.current;
     setIsLoadingExpenses(true);
     setExpensesError("");
 
     try {
       const accessToken = await getAccessToken();
       const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
-      setExpenses(data);
+      if (version === recentVersion.current) setExpenses(data);
     } catch (refreshError) {
+      if (version !== recentVersion.current) return;
       setExpenses([]);
       setExpensesError(
         refreshError instanceof Error ? refreshError.message : "Ocorreu um erro ao carregar as despesas.",
       );
     } finally {
-      setIsLoadingExpenses(false);
+      if (version === recentVersion.current) setIsLoadingExpenses(false);
     }
   }, [accounts, fetchExpenses, getAccessToken, status]);
 
   const searchExpenseHistory = useCallback(async (filters: ExpenseHistoryFilters) => {
     if (status !== "authenticated") return;
 
+    historyFilters.current = filters;
+    const version = ++historyVersion.current;
     setIsLoadingExpenseHistory(true);
     setExpenseHistoryError("");
     setHasSearchedExpenseHistory(true);
@@ -363,19 +382,107 @@ export default function Home() {
 
         return true;
       });
-      setExpenseHistory(filteredData);
+      if (version === historyVersion.current) setExpenseHistory(filteredData);
     } catch (refreshError) {
+      if (version !== historyVersion.current) return;
       setExpenseHistory([]);
       setExpenseHistoryError(
         refreshError instanceof Error ? refreshError.message : "Ocorreu um erro ao carregar o histórico de despesas.",
       );
     } finally {
-      setIsLoadingExpenseHistory(false);
+      if (version === historyVersion.current) setIsLoadingExpenseHistory(false);
     }
   }, [accounts, fetchExpenses, getAccessToken, status]);
 
+  const refreshAfterReversal = async () => {
+    const session = sessionVersion.current;
+    const recent = ++recentVersion.current;
+    const history = ++historyVersion.current;
+    const filters = historyFilters.current;
+    setIsLoadingExpenses(true);
+    setExpensesError("");
+    if (filters) {
+      setIsLoadingExpenseHistory(true);
+      setExpenseHistoryError("");
+    }
+    const failures: string[] = [];
+    try {
+      let token: string;
+      try {
+        token = await getAccessToken();
+      } catch (error) {
+        if (session === sessionVersion.current) {
+          setAccounts(items => items.map(item => ({ ...item, balance: null })));
+          setAccountsError("Não foi possível atualizar os saldos. Atualize os dados novamente.");
+          setExpensesError("Não foi possível atualizar as despesas. Verifique sua sessão.");
+          if (filters) setExpenseHistoryError("Não foi possível atualizar o histórico. Verifique sua sessão.");
+        }
+        throw error;
+      }
+      if (session !== sessionVersion.current) throw new Error("Sessão encerrada.");
+      await Promise.allSettled([
+        (async () => {
+          try { await fetchAccounts(token); }
+          catch {
+            if (session !== sessionVersion.current) return;
+            failures.push("contas");
+            setAccountsError("Não foi possível atualizar os saldos. Atualize os dados novamente.");
+            setAccounts(items => items.map(item => ({ ...item, balance: null })));
+          } finally {
+            if (session === sessionVersion.current) setIsLoadingAccounts(false);
+          }
+        })(),
+        (async () => {
+          try {
+            const data = await fetchExpenses(token, buildRecentExpensesUrl(), accounts);
+            if (recent === recentVersion.current) setExpenses(data);
+          } catch {
+            if (recent !== recentVersion.current) return;
+            failures.push("despesas");
+            setExpensesError("Não foi possível atualizar as despesas.");
+          }
+        })(),
+        ...(filters ? [(async () => {
+          try {
+            const data = await fetchExpenses(token, buildExpenseHistoryUrl(filters), accounts);
+            if (history === historyVersion.current) setExpenseHistory(data.filter(item =>
+              (!filters.category || item.category === filters.category) && (!filters.accountId || item.accountId === filters.accountId)));
+          } catch {
+            if (history !== historyVersion.current) return;
+            failures.push("histórico");
+            setExpenseHistoryError("Não foi possível atualizar o histórico.");
+          }
+        })()] : []),
+      ]);
+      if (session !== sessionVersion.current || failures.length) throw new Error("Não foi possível atualizar todos os dados.");
+    } finally {
+      if (recent === recentVersion.current) setIsLoadingExpenses(false);
+      if (filters && history === historyVersion.current) setIsLoadingExpenseHistory(false);
+    }
+  };
+  const reversal = useExpenseReversal(getAccessToken, refreshAfterReversal, status);
+  const reversalProps = {
+    onReverse: (item: Expense) => { void reversal.reverse(item); },
+    reversingId: reversal.busyId,
+    reversalBlockedIds: reversal.blockedIds,
+  };
+  const reversalFeedback = (
+    <div className="mt-4 flex flex-wrap items-center gap-3">
+      {reversal.message ? <p role="status" className="text-sm">{reversal.message}</p> : null}
+      <button type="button" disabled={reversal.updating || reversal.busyId !== null} onClick={() => { void reversal.reload(); }}
+        className="rounded-md border border-slate-400 px-3 py-2 text-sm disabled:opacity-60">
+        {reversal.updating ? "Atualizando…" : "Atualizar dados"}
+      </button>
+    </div>
+  );
+
   useEffect(() => {
+    sessionVersion.current++;
+    recentVersion.current++;
+    historyVersion.current++;
+    accountVersion.current++;
     if (status !== "authenticated") {
+      historyFilters.current = null;
       setExpenses([]);
       setExpensesError("");
       setIsLoadingExpenses(false);
@@ -397,6 +504,7 @@ export default function Home() {
     }
 
     let active = true;
+    const recent = recentVersion.current;
 
     async function bootstrapData() {
       let loadedAccounts: AccountSummary[] = [];
@@ -420,9 +528,9 @@ export default function Home() {
 
         try {
           const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), loadedAccounts);
-          setExpenses(data);
+          if (active && recent === recentVersion.current) setExpenses(data);
         } catch (expensesLoadError) {
-          if (!active) return;
+          if (!active || recent !== recentVersion.current) return;
           setExpenses([]);
           setExpensesError(
             expensesLoadError instanceof Error
@@ -810,12 +918,14 @@ export default function Home() {
             onSubmit={handleSubmit}
             onCancel={resetForm}
           />
+          {reversalFeedback}
           <ExpenseList
             expenses={expenses}
             isLoading={isLoadingExpenses}
             error={expensesError}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            {...reversalProps}
           />
         </div>
       );
@@ -823,15 +933,19 @@ export default function Home() {
 
     if (activeMenu === "expenseHistory") {
       return (
-        <ExpenseHistoryTable
-          expenses={expenseHistory}
-          accounts={accounts}
-          isLoading={isLoadingExpenseHistory}
-          error={expenseHistoryError}
-          hasSearched={hasSearchedExpenseHistory}
-          onSearch={searchExpenseHistory}
-          onEdit={handleEditExpenseById}
-        />
+        <div>
+          {reversalFeedback}
+          <ExpenseHistoryTable
+            expenses={expenseHistory}
+            accounts={accounts}
+            isLoading={isLoadingExpenseHistory}
+            error={expenseHistoryError}
+            hasSearched={hasSearchedExpenseHistory}
+            onSearch={searchExpenseHistory}
+            onEdit={handleEditExpenseById}
+            {...reversalProps}
+          />
+        </div>
       );
     }
 
