@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthScreen } from "@/components/AuthScreen";
+import { IncomeSourcesSection } from "@/components/IncomeSourcesSection";
 import { AccountForm } from "@/components/AccountForm";
 import { AccountList } from "@/components/AccountList";
 import type { Expense } from "@/types/expense";
@@ -841,6 +842,8 @@ export default function Home() {
         </div>
       );
     }
+
+    if (activeMenu === "incomeSources") return <IncomeSourcesSection />;
 
     if (activeMenu === "accounts") {
       return (

@@ -16,6 +16,7 @@ export function Header({ sidebarOpen, setSidebarOpen, activeMenu }: HeaderProps)
     transactions: "Gerenciar Despesas",
     expenseHistory: "Histórico de Despesas",
     accounts: "Cadastrar Contas",
+    incomeSources: "Fontes de renda",
     reports: "Relatórios",
   };
   const displayName =
