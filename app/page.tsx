@@ -872,6 +872,7 @@ export default function Home() {
             onCancelEdit={resetAccountForm}
           />
           <AccountList
+            getAccessToken={getAccessToken}
             accounts={accounts}
             isLoading={isLoadingAccounts}
             error={accountListFeedbackError || accountsError}
