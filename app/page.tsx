@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthScreen } from "@/components/AuthScreen";
 import { IncomesSection } from "@/components/IncomesSection";
@@ -17,6 +17,10 @@ import { ExpenseList } from "@/components/ExpenseList";
 import { ExpenseHistoryTable, type ExpenseHistoryFilters } from "@/components/ExpenseHistoryTable";
 import { buildAccountPayload } from "@/lib/accountForm";
 import { accountsApiUrl, expensesApiUrl } from "@/lib/config";
+
+import { expensePaymentFields } from '@/lib/expensePayment';
+import { useExpensePayment } from '@/hooks/useExpensePayment';
+import { ExpensePaymentForm } from '@/components/ExpensePaymentForm';
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10);
@@ -74,6 +78,12 @@ type ExpenseApiItem = Partial<{
   paymentDate: string | null;
   paidFromAccountId: string | null;
   isPaid: boolean;
+  paymentStatus: Expense['paymentStatus'];
+  canPay: boolean;
+  totalPaid: number;
+  payment: Expense['payment'];
+  reversedDate: string | null;
+  canReverse: boolean;
 }>;
 
 type AccountApiItem = Partial<{
@@ -229,7 +239,6 @@ function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]
   const accountId = apiExpense.accountId ?? "";
   const matchingAccount = accounts.find((account) => account.accountId === accountId);
   const amount = apiExpense.amount ?? apiExpense.value ?? 0;
-  const paymentSource = apiExpense.paidFromAccountId ?? "";
 
   return {
     expenseId: apiExpense.expenseId ?? apiExpense.id,
@@ -240,9 +249,7 @@ function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]
     installments: apiExpense.installments ?? 1,
     accountId,
     accountName: apiExpense.accountName ?? matchingAccount?.name ?? "",
-    isPaid: apiExpense.isPaid ?? Boolean(apiExpense.paymentDate || paymentSource),
-    paidFromAccountId: paymentSource,
-    paymentMethod: apiExpense.paymentMethod ?? null,
+    ...expensePaymentFields(apiExpense),
   };
 }
 
@@ -285,9 +292,17 @@ export default function Home() {
   const [accountListFeedbackError, setAccountListFeedbackError] = useState("");
   const [accountListFeedbackSuccess, setAccountListFeedbackSuccess] = useState("");
   const [updatingAccountStatusId, setUpdatingAccountStatusId] = useState<string | null>(null);
+  const [paymentDataVersion, setPaymentDataVersion] = useState(0);
+  const historyFilters = useRef<ExpenseHistoryFilters | null>(null);
+  const accountVersion = useRef(0);
+  const recentVersion = useRef(0);
+  const historyVersion = useRef(0);
+  const sessionGeneration = useRef(0);
   const activeAccounts = accounts.filter((item) => item.active !== false);
 
   const fetchAccounts = useCallback(async (accessToken: string) => {
+    const session = sessionGeneration.current;
+    const version = ++accountVersion.current;
     setIsLoadingAccounts(true);
     setAccountsError("");
 
@@ -306,7 +321,8 @@ export default function Home() {
       .map((item) => normalizeAccount(item))
       .filter((item): item is AccountSummary => item !== null);
 
-    setAccounts(data);
+    if (session !== sessionGeneration.current) throw new Error("Sessão alterada.");
+    if (version === accountVersion.current) setAccounts(data);
     return data;
   }, []);
 
@@ -330,26 +346,30 @@ export default function Home() {
   const refreshRecentExpenses = useCallback(async () => {
     if (status !== "authenticated") return;
 
+    const version = ++recentVersion.current;
     setIsLoadingExpenses(true);
     setExpensesError("");
 
     try {
       const accessToken = await getAccessToken();
       const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
-      setExpenses(data);
+      if (version === recentVersion.current) setExpenses(data);
     } catch (refreshError) {
+      if (version !== recentVersion.current) return;
       setExpenses([]);
       setExpensesError(
         refreshError instanceof Error ? refreshError.message : "Ocorreu um erro ao carregar as despesas.",
       );
     } finally {
-      setIsLoadingExpenses(false);
+      if (version === recentVersion.current) setIsLoadingExpenses(false);
     }
   }, [accounts, fetchExpenses, getAccessToken, status]);
 
   const searchExpenseHistory = useCallback(async (filters: ExpenseHistoryFilters) => {
     if (status !== "authenticated") return;
 
+    historyFilters.current = filters;
+    const version = ++historyVersion.current;
     setIsLoadingExpenseHistory(true);
     setExpenseHistoryError("");
     setHasSearchedExpenseHistory(true);
@@ -363,19 +383,77 @@ export default function Home() {
 
         return true;
       });
-      setExpenseHistory(filteredData);
+      if (version === historyVersion.current) setExpenseHistory(filteredData);
     } catch (refreshError) {
+      if (version !== historyVersion.current) return;
       setExpenseHistory([]);
       setExpenseHistoryError(
         refreshError instanceof Error ? refreshError.message : "Ocorreu um erro ao carregar o histórico de despesas.",
       );
     } finally {
-      setIsLoadingExpenseHistory(false);
+      if (version === historyVersion.current) setIsLoadingExpenseHistory(false);
     }
   }, [accounts, fetchExpenses, getAccessToken, status]);
 
+  const refreshPaymentData = useCallback(async () => {
+    const session = sessionGeneration.current;
+    const recent = ++recentVersion.current;
+    const history = ++historyVersion.current;
+    const filters = historyFilters.current;
+    setPaymentDataVersion(value => value + 1);
+    setIsLoadingExpenses(true); setExpensesError('');
+    if (filters) { setIsLoadingExpenseHistory(true); setExpenseHistoryError(''); }
+    try {
+      const token = await getAccessToken();
+      if (session !== sessionGeneration.current) throw new Error('Sessão alterada.');
+      const results = await Promise.allSettled([
+        (async () => {
+          try { await fetchAccounts(token); }
+          catch (error) {
+            if (session === sessionGeneration.current) setAccountsError('Não foi possível atualizar o saldo. Atualize os dados novamente.');
+            throw error;
+          } finally { if (session === sessionGeneration.current) setIsLoadingAccounts(false); }
+        })(),
+        (async () => {
+          try {
+            const data = await fetchExpenses(token, buildRecentExpensesUrl(), accounts);
+            if (session === sessionGeneration.current && recent === recentVersion.current) setExpenses(data);
+          } catch (error) {
+            if (session === sessionGeneration.current && recent === recentVersion.current) setExpensesError('Não foi possível atualizar as despesas.');
+            throw error;
+          }
+        })(),
+        ...(filters ? [(async () => {
+          try {
+            const data = await fetchExpenses(token, buildExpenseHistoryUrl(filters), accounts);
+            if (session === sessionGeneration.current && history === historyVersion.current) setExpenseHistory(data.filter(item =>
+              (!filters.category || item.category === filters.category) && (!filters.accountId || item.accountId === filters.accountId)));
+          } catch (error) {
+            if (session === sessionGeneration.current && history === historyVersion.current) setExpenseHistoryError('Não foi possível atualizar o histórico.');
+            throw error;
+          }
+        })()] : []),
+      ]);
+      if (results.some(result => result.status === 'rejected')) throw new Error('Falha ao atualizar dados.');
+    } finally {
+      if (session === sessionGeneration.current) {
+        if (recent === recentVersion.current) setIsLoadingExpenses(false);
+        if (filters && history === historyVersion.current) setIsLoadingExpenseHistory(false);
+      }
+    }
+  }, [accounts, fetchAccounts, fetchExpenses, getAccessToken]);
+  const payment = useExpensePayment(getAccessToken, refreshPaymentData, status);
+  const paymentProps = {
+    onPay: payment.open, paymentAccounts: accounts,
+    paymentBusy: payment.busy, paymentBlockedIds: payment.blockedIds,
+  };
+
   useEffect(() => {
+    sessionGeneration.current++;
+    recentVersion.current++;
+    historyVersion.current++;
     if (status !== "authenticated") {
+      historyFilters.current = null;
       setExpenses([]);
       setExpensesError("");
       setIsLoadingExpenses(false);
@@ -397,6 +475,7 @@ export default function Home() {
     }
 
     let active = true;
+    const recent = ++recentVersion.current;
 
     async function bootstrapData() {
       let loadedAccounts: AccountSummary[] = [];
@@ -420,9 +499,9 @@ export default function Home() {
 
         try {
           const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), loadedAccounts);
-          setExpenses(data);
+          if (active && recent === recentVersion.current) setExpenses(data);
         } catch (expensesLoadError) {
-          if (!active) return;
+          if (!active || recent !== recentVersion.current) return;
           setExpenses([]);
           setExpensesError(
             expensesLoadError instanceof Error
@@ -811,6 +890,7 @@ export default function Home() {
             onCancel={resetForm}
           />
           <ExpenseList
+            {...paymentProps}
             expenses={expenses}
             isLoading={isLoadingExpenses}
             error={expensesError}
@@ -824,6 +904,7 @@ export default function Home() {
     if (activeMenu === "expenseHistory") {
       return (
         <ExpenseHistoryTable
+          {...paymentProps}
           expenses={expenseHistory}
           accounts={accounts}
           isLoading={isLoadingExpenseHistory}
@@ -871,7 +952,7 @@ export default function Home() {
             onSubmit={handleAccountSubmit}
             onCancelEdit={resetAccountForm}
           />
-          <AccountList
+          <AccountList key={paymentDataVersion}
             getAccessToken={getAccessToken}
             accounts={accounts}
             isLoading={isLoadingAccounts}
@@ -909,7 +990,12 @@ export default function Home() {
         <div className="flex flex-1 flex-col sm:ml-64">
           <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeMenu={activeMenu} />
 
-          <main className="p-4 sm:p-6">{renderContent()}</main>
+          <main className="p-4 sm:p-6">{payment.message && <div role="status" className="mb-4 rounded-md border p-3">
+              <p>{payment.message}</p>
+              <button type="button" disabled={payment.busy} onClick={() => { void payment.reload(); }} className="mt-2 rounded-md border px-3 py-2 disabled:opacity-60">Atualizar dados</button>
+            </div>}
+            {payment.selected && <ExpensePaymentForm key={payment.selected.expenseId} expense={payment.selected} accounts={accounts} busy={payment.busy} error={payment.message} onSubmit={payload => { void payment.submit(payload); }} onCancel={payment.cancel} />}
+            {renderContent()}</main>
         </div>
       </div>
     </div>

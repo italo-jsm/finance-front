@@ -2,7 +2,9 @@
 
 import { Expense, expenseCategoryOptions } from "../types/expense";
 
-type ExpenseListProps = {
+import { ExpensePaymentAction, type ExpensePaymentProps } from './ExpensePaymentAction';
+
+type ExpenseListProps = ExpensePaymentProps & {
   expenses: Expense[];
   isLoading: boolean;
   error: string;
@@ -10,7 +12,7 @@ type ExpenseListProps = {
   onDelete: (index: number) => void;
 };
 
-export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete }: ExpenseListProps) {
+export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onPay, paymentAccounts, paymentBlockedIds, paymentBusy }: ExpenseListProps) {
   if (isLoading) {
     return <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Carregando despesas...</p>;
   }
@@ -43,7 +45,8 @@ export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete }: Ex
                 </p>
                 <p className="text-base font-bold">R$ {item.value.toFixed(2)}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
+                <ExpensePaymentAction expense={item} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(item.expenseId ?? '')} />
                 <button
                   type="button"
                   onClick={() => onEdit(index)}

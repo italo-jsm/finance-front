@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import type { AccountSummary } from "@/types/account";
-import { Expense, expenseCategoryOptions } from "@/types/expense";
+import { Expense, expenseCategoryOptions } from "../types/expense";
+import { ExpensePaymentAction, type ExpensePaymentProps } from './ExpensePaymentAction';
 
 export type ExpenseHistoryFilters = {
   dateFrom: string;
@@ -11,7 +12,7 @@ export type ExpenseHistoryFilters = {
   accountId: string;
 };
 
-type ExpenseHistoryTableProps = {
+type ExpenseHistoryTableProps = ExpensePaymentProps & {
   expenses: Expense[];
   accounts: AccountSummary[];
   isLoading: boolean;
@@ -39,7 +40,7 @@ export function ExpenseHistoryTable({
   error,
   hasSearched,
   onSearch,
-  onEdit,
+  onEdit, onPay, paymentAccounts, paymentBlockedIds, paymentBusy,
 }: ExpenseHistoryTableProps) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -216,7 +217,8 @@ export function ExpenseHistoryTable({
                 </dl>
 
                 <div className="mt-4 flex justify-end">
-                  {expense.expenseId ? (
+                  <ExpensePaymentAction expense={expense} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(expense.expenseId ?? '')} />
+                    {expense.expenseId ? (
                     <button
                       type="button"
                       onClick={() => onEdit(expense.expenseId as string)}
@@ -258,7 +260,8 @@ export function ExpenseHistoryTable({
                         R$ {expense.value.toFixed(2)}
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {expense.expenseId ? (
+                        <ExpensePaymentAction expense={expense} accounts={paymentAccounts} onPay={onPay} blocked={paymentBusy || paymentBlockedIds?.has(expense.expenseId ?? '')} />
+                    {expense.expenseId ? (
                           <button
                             type="button"
                             onClick={() => onEdit(expense.expenseId as string)}
