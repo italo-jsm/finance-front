@@ -154,3 +154,12 @@ test('extrato usa consulta compartilhada de contas com sinal e ignora resultado 
   closed.mount(); await flush(); closed.unmount(); assert.equal(signal.aborted, true);
   finish([{ ...account, balance: 1030 }]); await flush(); assert.equal(closed.render().account, null);
 });
+
+test('pagamento mostra nome original da despesa com saída e fallback para registros antigos', () => {
+  const html = markup({ movements: [{ ...movement, description: 'Compras do mercado' }] });
+  assert.match(html, /Compras do mercado/); assert.doesNotMatch(html, />Pagamento</);
+  assert.match(html, /−/); assert.match(html, /200,00/);
+  for (const description of [null, undefined, '', '   ']) {
+    assert.match(markup({ movements: [{ ...movement, description }] }), />Pagamento</);
+  }
+});

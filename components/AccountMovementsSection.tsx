@@ -32,7 +32,7 @@ export function AccountMovementsSection({ account, getAccessToken, onClose, load
         {!state.loading && !state.movementsError && (state.movements.length ? <ul className="mt-4 divide-y divide-slate-200 dark:divide-slate-700">
           {state.movements.map(item => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
             <div>
-              <p className="font-medium">{item.origin === 'REVERSAL' ? item.description || origins.REVERSAL : origins[item.origin] ?? item.origin}</p>
+              <p className="font-medium">{(item.origin === 'PAYMENT' || item.origin === 'REVERSAL') && item.description?.trim() ? item.description : origins[item.origin] ?? item.origin}</p>
               <time dateTime={item.date} className="text-sm text-slate-500 dark:text-slate-400">{item.date.split('-').reverse().join('/')}</time>
             </div>
             <span className="font-semibold tabular-nums">{item.amount > 0 ? '+' : item.amount < 0 ? '−' : ''}{money(Math.abs(item.amount))}</span>
