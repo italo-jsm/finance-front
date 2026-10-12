@@ -38,5 +38,11 @@ export function listAccountMovements(id: string, token: string, signal?: AbortSi
 
 export function latestMovements(items: AccountMovement[]): AccountMovement[] {
   // Reverse first so stable sorting preserves the inverse API order for equal dates.
-  return [...items].reverse().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+  const byId = new Map(items.map(item => [item.id, item]));
+  return [...items].reverse().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10).map(item => {
+    if (item.origin !== 'REVERSAL') return item;
+    const debit = item.originId ? byId.get(item.originId) : undefined;
+    const description = debit?.origin === 'PAYMENT' && debit.accountId === item.accountId ? debit.description?.trim() : undefined;
+    return { ...item, description: description ? `Estorno de "${description}"` : 'Estorno' };
+  });
 }

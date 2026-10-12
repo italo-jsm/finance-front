@@ -3,6 +3,7 @@ export type AccountMovement = {
   accountId: string;
   amount: number;
   date: string;
-  origin: 'OPENING' | 'RECEIPT' | 'PAYMENT';
+  origin: 'OPENING' | 'RECEIPT' | 'PAYMENT' | 'REVERSAL';
   originId: string | null;
+  description?: string | null;
 };

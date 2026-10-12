@@ -132,3 +132,20 @@ test('lista encerra seção quando atualização confirma conta desativada ou au
     assert.doesNotMatch(html, /Últimas 10 movimentações/);
   }
 });
+
+test('seção apresenta estorno com descrição e fallback traduzido, preservando crédito', () => {
+  const reversal = { ...movement, origin: 'REVERSAL', amount: 454, description: 'Estorno de "Compras do mercado"' };
+  const html = markup({ movements: [reversal] });
+  assert.match(html, /Estorno de &quot;Compras do mercado&quot;/); assert.match(html, /\+/); assert.match(html, /454,00/); assert.doesNotMatch(html, /REVERSAL/);
+  assert.match(markup({ movements: [{ ...reversal, description: undefined }] }), /Estorno/);
+});
+
+
+test('pagamento mostra nome original da despesa com saída e fallback para registros antigos', () => {
+  const html = markup({ movements: [{ ...movement, description: 'Compras do mercado' }] });
+  assert.match(html, /Compras do mercado/); assert.doesNotMatch(html, />Pagamento</);
+  assert.match(html, /−/); assert.match(html, /200,00/);
+  for (const description of [null, undefined, '', '   ']) {
+    assert.match(markup({ movements: [{ ...movement, description }] }), />Pagamento</);
+  }
+});
