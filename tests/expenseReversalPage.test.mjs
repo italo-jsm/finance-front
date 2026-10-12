@@ -10,11 +10,11 @@ const originalLoad = Module._load, originalFetch = global.fetch;
 afterEach(() => { Module._load = originalLoad; global.fetch = originalFetch; });
 const item = { expenseId: 'e', eventDate: '2026-10-10', description: 'Mercado', amount: 200, category: 'OTHER', accountId: 'a', reversedDate: '2026-10-12', canReverse: false };
 function runtime() {
-  const slots = []; let cursor; let refresh; let getToken = async () => 'token';
+  const slots = []; const effects = []; let cursor; let refresh; let getToken = async () => 'token';
   const hooks = {
     useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === 'function' ? initial() : initial; return [slots[i], v => { slots[i] = typeof v === 'function' ? v(slots[i]) : v; }]; },
     useRef(initial) { return slots[cursor++] ??= { current: initial }; },
-    useCallback(fn) { return fn; }, useEffect() {},
+    useCallback(fn) { return fn; }, useEffect(fn) { effects.push(fn); },
   };
   Module._load = function(id, ...args) {
     if (id === 'react') return { ...React, ...hooks };
@@ -31,8 +31,9 @@ function runtime() {
     for (const child of [node.props?.children].flat(Infinity)) { const match = find(child, type); if (match) return match; }
   };
   return {
+    enterAccounts() { this.screen('accounts', 'AccountList'); return effects.at(-1)(); },
     setGetter(fn) { getToken = fn; },
-    render() { cursor = 0; return Home(); },
+    render() { cursor = 0; effects.length = 0; return Home(); },
     screen(menu, type) { let tree = this.render(); find(tree, 'Sidebar').props.setActiveMenu(menu); tree = this.render(); return find(tree, type).props; },
     refresh() { this.render(); return refresh(); },
   };
@@ -70,4 +71,36 @@ test('falha ao obter token após estorno invalida saldo anterior e informa falha
   await assert.rejects(app.refresh());
   const accounts = app.screen('accounts', 'AccountList');
   assert.equal(accounts.accounts[0].balance, null); assert.match(accounts.error, /saldos/);
+});
+
+test('entrar em Contas atualiza saldo do card antes de abrir extrato; consulta compartilhada mantém card sincronizado', async () => {
+  let balance = 576, calls = 0;
+  global.fetch = async (url, options) => {
+    if (url.endsWith('/accounts')) { calls++; assert.equal(options.cache, 'no-store'); return Response.json([{ accountId: 'a', name: 'Banco', accountType: 'CHECKING_ACCOUNT', balance }]); }
+    return Response.json([item]);
+  };
+  const app = runtime(); await app.refresh(); balance = 1030;
+  const cleanup = app.enterAccounts(); await new Promise(resolve => setImmediate(resolve));
+  const cards = app.screen('accounts', 'AccountList'); assert.equal(cards.accounts[0].balance, 1030); assert.equal(calls, 2);
+  balance = 900; await cards.loadAccounts('token'); assert.equal(app.screen('accounts', 'AccountList').accounts[0].balance, 900);
+  cleanup?.();
+});
+test('falha ao entrar em Contas não apresenta saldo anterior como atual', async () => {
+  global.fetch = async url => Response.json(url.endsWith('/accounts') ? [{ accountId: 'a', name: 'Banco', accountType: 'CHECKING_ACCOUNT', balance: 576 }] : [item]);
+  const app = runtime(); await app.refresh();
+  global.fetch = async () => { throw new TypeError('offline'); };
+  const cleanup = app.enterAccounts(); await new Promise(resolve => setImmediate(resolve));
+  const cards = app.screen('accounts', 'AccountList'); assert.equal(cards.accounts[0].balance, null); assert.match(cards.error, /saldos/); cleanup?.();
+});
+
+test('consulta antiga do extrato não sobrescreve saldo de consulta mais recente da página', async () => {
+  const account = { accountId: 'a', name: 'Banco', accountType: 'CHECKING_ACCOUNT', balance: 1030 };
+  global.fetch = async url => Response.json(url.endsWith('/accounts') ? [account] : [item]);
+  const app = runtime(); await app.refresh();
+  let old;
+  global.fetch = () => new Promise(resolve => { old = resolve; });
+  const pending = app.screen('accounts', 'AccountList').loadAccounts('token');
+  global.fetch = async url => Response.json(url.endsWith('/accounts') ? [{ ...account, balance: 1200 }] : [item]);
+  await app.refresh(); old(Response.json([{ ...account, balance: 576 }])); await pending;
+  assert.equal(app.screen('accounts', 'AccountList').accounts[0].balance, 1200);
 });

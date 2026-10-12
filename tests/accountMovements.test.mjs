@@ -43,3 +43,14 @@ test('falhas HTTP preservam status e rede oferece nova tentativa', async () => {
   global.fetch = async () => { throw new TypeError('offline'); };
   await assert.rejects(api().listMovementAccounts('token'), /conectar/);
 });
+
+test('estorno usa descrição do débito original mesmo fora das últimas dez e não expõe ID técnico', () => {
+  const debit = { id: 'debit', accountId: 'a', origin: 'PAYMENT', date: '2026-09-01', amount: -454, description: 'Compras do mercado' };
+  const reversal = { id: 'reversal', accountId: 'a', origin: 'REVERSAL', originId: 'debit', date: '2026-10-12', amount: 454, description: 'Estorno da transação debit' };
+  const movements = [debit, ...Array.from({ length: 10 }, (_, i) => ({ ...debit, id: `other-${i}`, date: '2026-10-01' })), reversal];
+  const items = api().latestMovements(movements);
+  assert.equal(items.length, 10); assert.equal(items[0].description, 'Estorno de "Compras do mercado"');
+  assert.equal(reversal.description, 'Estorno da transação debit');
+  assert.equal(api().latestMovements([{ ...reversal, originId: 'missing' }])[0].description, 'Estorno');
+  assert.equal(api().latestMovements([{ ...debit, accountId: 'b' }, reversal])[0].description, 'Estorno');
+});

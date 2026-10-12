@@ -297,32 +297,33 @@ export default function Home() {
   const sessionVersion = useRef(0);
   const activeAccounts = accounts.filter((item) => item.active !== false);
 
-  const fetchAccounts = useCallback(async (accessToken: string) => {
+  const fetchAccounts = useCallback(async (accessToken: string, signal?: AbortSignal) => {
     const version = ++accountVersion.current;
     const session = sessionVersion.current;
+    const isCurrent = () => !signal?.aborted && session === sessionVersion.current && version === accountVersion.current;
     setIsLoadingAccounts(true);
     setAccountsError("");
-
-    const response = await fetch(accountsApiUrl, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(await getApiErrorMessage(response, "Nao foi possivel carregar as contas."));
+    try {
+      const response = await fetch(accountsApiUrl, {
+        cache: "no-store", signal,
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) throw new Error(await getApiErrorMessage(response, "Não foi possível carregar as contas."));
+      const payload = await response.json();
+      const data = extractAccountList(payload)
+        .map((item) => normalizeAccount(item))
+        .filter((item): item is AccountSummary => item !== null);
+      if (isCurrent()) setAccounts(data);
+      return data;
+    } catch (error) {
+      if (isCurrent()) {
+        setAccounts(items => items.map(item => ({ ...item, balance: null })));
+        setAccountsError("Não foi possível atualizar os saldos. Acesse Contas novamente para tentar atualizar.");
+      }
+      throw error;
+    } finally {
+      if (session === sessionVersion.current && version === accountVersion.current) setIsLoadingAccounts(false);
     }
-
-    const payload = await response.json();
-    const data = extractAccountList(payload)
-      .map((item) => normalizeAccount(item))
-      .filter((item): item is AccountSummary => item !== null);
-
-    if (session === sessionVersion.current && version === accountVersion.current) {
-      setAccounts(data);
-      setIsLoadingAccounts(false);
-    }
-    return data;
   }, []);
 
   const fetchExpenses = useCallback(async (accessToken: string, requestUrl: string, availableAccounts: AccountSummary[]) => {
@@ -595,6 +596,26 @@ export default function Home() {
 
     void refreshRecentExpenses();
   }, [activeMenu, refreshRecentExpenses]);
+
+  useEffect(() => {
+    if (activeMenu !== "accounts" || status !== "authenticated") return;
+    let active = true;
+    void (async () => {
+      setIsLoadingAccounts(true);
+      try {
+        const token = await getAccessToken();
+        if (active) await fetchAccounts(token);
+      } catch {
+        if (active) {
+          setAccounts(items => items.map(item => ({ ...item, balance: null })));
+          setAccountsError("Não foi possível atualizar os saldos. Acesse Contas novamente para tentar atualizar.");
+        }
+      } finally {
+        if (active) setIsLoadingAccounts(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [activeMenu, status, getAccessToken, fetchAccounts]);
 
   const resetForm = () => {
     setExpense(emptyExpense);
@@ -995,6 +1016,7 @@ export default function Home() {
             editingAccountId={editingAccountId}
             onEdit={handleEditAccount}
             onToggleStatus={handleToggleAccountStatus}
+            loadAccounts={fetchAccounts}
           />
         </div>
       );

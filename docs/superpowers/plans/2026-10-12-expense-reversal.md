@@ -55,3 +55,10 @@
 - TypeScript e ESLint dos arquivos desta entrega passaram. O lint global mantém duas falhas anteriores em `components/Sidebar.tsx`, idêntico à `main` e preservado nesta entrega.
 - Primeiro build bloqueado pelo download das fontes Google; build repetido com acesso à rede e concluído com sucesso.
 - Sem merge ou push; arquivos locais da história 006 e de seu plano preservados fora do commit.
+
+## Correções solicitadas após validação visual
+
+- Atualizar contas ao entrar na tela Contas, com `cache: no-store`; em falha, invalidar o saldo anterior e apresentar mensagem.
+- Compartilhar `fetchAccounts` entre cards e extrato, preservando controle de versão das respostas e cancelamento. Revisão identificou que publicar saldo somente após esperar movimentações poderia sobrescrever consulta mais recente; teste de regressão cobre a resolução fora de ordem.
+- Reconhecer `REVERSAL` e apresentar `Estorno de "descrição da despesa original"`. Resolver `originId` pelo débito `PAYMENT` no histórico completo, usando sua descrição antes do corte dos dez itens. Sem descrição disponível, apresentar `Estorno`, sem IDs técnicos. Não requer consultas extras ou mudanças no backend.
+- Validar consulta ao entrar em Contas, sincronização com extrato, saldo indisponível em falha, cancelamento, concorrência entre consultas e descrição do débito fora dos últimos dez itens.
