@@ -25,6 +25,8 @@ export type Expense = {
   isPaid: boolean;
   paidFromAccountId: string;
   paymentMethod?: string | null;
+  reversedDate?: string | null;
+  canReverse?: boolean;
 };
 
 export const expenseCategoryOptions: Array<{ value: ExpenseCategory; label: string }> = [

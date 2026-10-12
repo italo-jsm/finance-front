@@ -2,7 +2,9 @@
 
 import { Expense, expenseCategoryOptions } from "../types/expense";
 
-type ExpenseListProps = {
+import { ExpenseReversalAction, reversedExpenseClass, type ExpenseReversalProps } from "./ExpenseReversalAction";
+
+type ExpenseListProps = ExpenseReversalProps & {
   expenses: Expense[];
   isLoading: boolean;
   error: string;
@@ -10,7 +12,7 @@ type ExpenseListProps = {
   onDelete: (index: number) => void;
 };
 
-export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete }: ExpenseListProps) {
+export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete, onReverse, reversingId, reversalBlockedIds }: ExpenseListProps) {
   if (isLoading) {
     return <p className="mt-6 text-sm text-slate-500 dark:text-slate-300">Carregando despesas...</p>;
   }
@@ -28,7 +30,7 @@ export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete }: Ex
       <h3 className="text-lg font-semibold">Últimas despesas</h3>
       <ul className="mt-3 space-y-2">
         {expenses.map((item, index) => (
-          <li key={`${item.date}-${item.description}-${index}`} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">
+          <li key={`${item.date}-${item.description}-${index}`} className={`rounded-lg border p-3 ${item.reversedDate ? reversedExpenseClass : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"}`}>
             {/*
               Old local items may not have the new fields yet, so we keep the rendering resilient.
             */}
@@ -43,7 +45,8 @@ export function ExpenseList({ expenses, isLoading, error, onEdit, onDelete }: Ex
                 </p>
                 <p className="text-base font-bold">R$ {item.value.toFixed(2)}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
+                <ExpenseReversalAction expense={item} busy={reversingId === item.expenseId} blocked={reversalBlockedIds.has(item.expenseId ?? "")} onReverse={onReverse} />
                 <button
                   type="button"
                   onClick={() => onEdit(index)}

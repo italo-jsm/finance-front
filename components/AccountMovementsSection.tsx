@@ -3,14 +3,14 @@
 import type { AccountSummary } from '../types/account';
 import { useAccountMovements } from '../hooks/useAccountMovements';
 
-const origins = { OPENING: 'Saldo inicial', RECEIPT: 'Recebimento', PAYMENT: 'Pagamento' };
+const origins = { OPENING: 'Saldo inicial', RECEIPT: 'Recebimento', PAYMENT: 'Pagamento', REVERSAL: 'Estorno' };
 const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const buttonClass = 'rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600';
 
-type Props = { account: AccountSummary; getAccessToken: () => Promise<string>; onClose: () => void };
+type Props = { account: AccountSummary; getAccessToken: () => Promise<string>; onClose: () => void; loadAccounts?: (token: string, signal?: AbortSignal) => Promise<AccountSummary[]> };
 
-export function AccountMovementsSection({ account, getAccessToken, onClose }: Props) {
-  const state = useAccountMovements(account, getAccessToken);
+export function AccountMovementsSection({ account, getAccessToken, onClose, loadAccounts }: Props) {
+  const state = useAccountMovements(account, getAccessToken, loadAccounts);
   return (
     <section aria-label={`Movimentações de ${account.name}`} className="mt-6 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -32,7 +32,7 @@ export function AccountMovementsSection({ account, getAccessToken, onClose }: Pr
         {!state.loading && !state.movementsError && (state.movements.length ? <ul className="mt-4 divide-y divide-slate-200 dark:divide-slate-700">
           {state.movements.map(item => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
             <div>
-              <p className="font-medium">{origins[item.origin] ?? item.origin}</p>
+              <p className="font-medium">{(item.origin === 'PAYMENT' || item.origin === 'REVERSAL') && item.description?.trim() ? item.description : origins[item.origin] ?? item.origin}</p>
               <time dateTime={item.date} className="text-sm text-slate-500 dark:text-slate-400">{item.date.split('-').reverse().join('/')}</time>
             </div>
             <span className="font-semibold tabular-nums">{item.amount > 0 ? '+' : item.amount < 0 ? '−' : ''}{money(Math.abs(item.amount))}</span>

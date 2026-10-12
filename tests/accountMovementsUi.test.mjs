@@ -47,7 +47,7 @@ test('vazio, carregamento e erro parcial são distintos sem saldo zero fictício
 });
 
 // Controlled hook runtime: run effects/cleanup explicitly and inspect async state without a DOM dependency.
-function hookRuntime() {
+function hookRuntime(loadAccounts) {
   const slots = []; let cursor = 0; const effects = []; const cleanups = [];
   const hooks = {
     useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === 'function' ? initial() : initial; return [slots[i], value => { slots[i] = typeof value === 'function' ? value(slots[i]) : value; }]; },
@@ -60,7 +60,7 @@ function hookRuntime() {
   const runHook = require(path).useAccountMovements;
   let currentAccount = account; let getter = async () => 'token';
   return {
-    render() { cursor = 0; effects.length = 0; return runHook(currentAccount, getter); },
+    render() { cursor = 0; effects.length = 0; return runHook(currentAccount, getter, loadAccounts); },
     mount() { const result = this.render(); effects.forEach(fn => cleanups.push(fn())); return result; },
     unmount() { cleanups.splice(0).forEach(fn => fn?.()); },
     setGetter(fn) { getter = fn; },
@@ -130,5 +130,36 @@ test('lista encerra seção quando atualização confirma conta desativada ou au
     const html = renderToStaticMarkup(React.createElement(Component, { accounts, getAccessToken: async () => 'token', isLoading: false, error: '', success: '', onEdit() {}, onToggleStatus() {} }));
     assert.match(html, /visualização foi encerrada/);
     assert.doesNotMatch(html, /Últimas 10 movimentações/);
+  }
+});
+
+test('seção apresenta estorno com descrição e fallback traduzido, preservando crédito', () => {
+  const reversal = { ...movement, origin: 'REVERSAL', amount: 454, description: 'Estorno de "Compras do mercado"' };
+  const html = markup({ movements: [reversal] });
+  assert.match(html, /Estorno de &quot;Compras do mercado&quot;/); assert.match(html, /\+/); assert.match(html, /454,00/); assert.doesNotMatch(html, /REVERSAL/);
+  assert.match(markup({ movements: [{ ...reversal, description: undefined }] }), /Estorno/);
+});
+
+test('extrato usa consulta compartilhada de contas com sinal e ignora resultado após fechamento', async () => {
+  let calls = 0;
+  const loader = async (token, signal) => {
+    calls++; assert.equal(token, 'token'); assert.ok(signal instanceof AbortSignal);
+    return [{ ...account, balance: 1030 }];
+  };
+  global.fetch = async () => Response.json([movement]);
+  const runtime = hookRuntime(loader); runtime.mount(); await flush();
+  assert.equal(calls, 1); assert.equal(runtime.render().account.balance, 1030); runtime.unmount();
+  let finish; let signal;
+  const closed = hookRuntime((token, requestSignal) => { signal = requestSignal; return new Promise(resolve => { finish = resolve; }); });
+  closed.mount(); await flush(); closed.unmount(); assert.equal(signal.aborted, true);
+  finish([{ ...account, balance: 1030 }]); await flush(); assert.equal(closed.render().account, null);
+});
+
+test('pagamento mostra nome original da despesa com saída e fallback para registros antigos', () => {
+  const html = markup({ movements: [{ ...movement, description: 'Compras do mercado' }] });
+  assert.match(html, /Compras do mercado/); assert.doesNotMatch(html, />Pagamento</);
+  assert.match(html, /−/); assert.match(html, /200,00/);
+  for (const description of [null, undefined, '', '   ']) {
+    assert.match(markup({ movements: [{ ...movement, description }] }), />Pagamento</);
   }
 });

@@ -16,10 +16,12 @@ type State = {
 const emptyState: State = { account: null, movements: [], loading: true, balanceError: '', movementsError: '', unavailable: false };
 const message = (error: unknown) => error instanceof Error ? error.message : 'Tente novamente.';
 
-export function useAccountMovements(selected: AccountSummary, getAccessToken: () => Promise<string>) {
+export function useAccountMovements(selected: AccountSummary, getAccessToken: () => Promise<string>, loadAccounts?: (token: string, signal?: AbortSignal) => Promise<AccountSummary[]>) {
   const [state, setState] = useState<State>(emptyState);
   const request = useRef<AbortController | null>(null);
   const tokenGetter = useRef(getAccessToken);
+  const accountsLoader = useRef(loadAccounts ?? listMovementAccounts);
+  useEffect(() => { accountsLoader.current = loadAccounts ?? listMovementAccounts; }, [loadAccounts]);
   useEffect(() => { tokenGetter.current = getAccessToken; }, [getAccessToken]);
 
   const reload = useCallback(async () => {
@@ -31,7 +33,7 @@ export function useAccountMovements(selected: AccountSummary, getAccessToken: ()
       const token = await tokenGetter.current();
       if (controller.signal.aborted) return;
       const [accounts, movements] = await Promise.allSettled([
-        listMovementAccounts(token, controller.signal),
+        accountsLoader.current(token, controller.signal),
         listAccountMovements(selected.accountId, token, controller.signal),
       ]);
       if (controller.signal.aborted) return;
