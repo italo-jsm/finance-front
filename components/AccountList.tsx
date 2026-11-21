@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { ListToolbar } from "./ListToolbar";
+import { FormModal } from "./FormModal";
 import { AccountMovementsSection } from "./AccountMovementsSection";
 import { accountTypeOptions, type AccountSummary } from "@/types/account";
 
@@ -12,10 +14,19 @@ type AccountListProps = {
   success: string;
   updatingAccountStatusId: string | null;
   editingAccountId: string | null;
+  onCreate?: () => void;
+  onRetry?: () => void;
   onEdit: (accountId: string) => void;
   onToggleStatus: (accountId: string) => void;
   loadAccounts?: (token: string, signal?: AbortSignal) => Promise<AccountSummary[]>;
 };
+
+const accountFilters = { name: "", type: "", status: "" };
+const fields = [
+  { name: "name", label: "Nome" },
+  { name: "type", label: "Tipo", options: [{ value: "", label: "Todos os tipos" }, ...accountTypeOptions] },
+  { name: "status", label: "Situação", options: [{ value: "", label: "Todas" }, { value: "active", label: "Ativa" }, { value: "inactive", label: "Inativa" }] },
+];
 
 function getTypeLabel(accountType: AccountSummary["accountType"]) {
   return accountTypeOptions.find((option) => option.value === accountType)?.label ?? accountType;
@@ -47,48 +58,50 @@ export function AccountList({
   success,
   updatingAccountStatusId,
   editingAccountId,
+  onCreate,
+  onRetry,
   onEdit,
   onToggleStatus,
   loadAccounts,
 }: AccountListProps) {
   const [selectedAccount, setSelectedAccount] = useState<AccountSummary | null>(null);
-  const activeAccounts = accounts.filter((account) => account.active !== false);
-  const inactiveAccounts = accounts.filter((account) => account.active === false);
+  const [filters, setFilters] = useState(accountFilters);
+  const visibleAccounts = accounts.filter((account) =>
+    account.name.toLocaleLowerCase("pt-BR").includes(filters.name.trim().toLocaleLowerCase("pt-BR")) &&
+    (!filters.type || account.accountType === filters.type) &&
+    (!filters.status || filters.status === (account.active === false ? "inactive" : "active")));
+  const activeAccounts = visibleAccounts.filter((account) => account.active !== false);
+  const inactiveAccounts = visibleAccounts.filter((account) => account.active === false);
 
   return (
-    <section className="mt-8">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-lg font-semibold">Contas cadastradas</h3>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Edite os dados da conta e desative itens que nao estao mais em uso.
-        </p>
-      </div>
+    <section className="space-y-4">
+      {onCreate && <ListToolbar title="Contas" createLabel="Nova conta" onCreate={onCreate} disabled={Boolean(updatingAccountStatusId)}
+        fields={fields} filters={filters} defaults={accountFilters} onApply={setFilters} />}
 
       {error ? (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-          {error}
+          <p role="alert">{error}</p>
+          {onRetry && <button type="button" onClick={onRetry} className="mt-2 min-h-11 rounded-lg border px-3 font-semibold">Tentar novamente</button>}
         </div>
       ) : null}
 
       {success ? (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-          {success}
+          <p role="status">{success}</p>
         </div>
       ) : null}
 
-      {isLoading ? <p className="mt-4 text-sm text-slate-500 dark:text-slate-300">Carregando contas...</p> : null}
+      {isLoading ? <p role="status" className="mt-4 text-sm text-slate-500 dark:text-slate-300">{accounts.length ? "Atualizando contas…" : "Carregando contas…"}</p> : null}
 
-      {!isLoading && accounts.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-500 dark:text-slate-300">Nenhuma conta cadastrada ainda.</p>
+      {!isLoading && !error && visibleAccounts.length === 0 ? (
+        <p className="mt-4 text-sm text-slate-500 dark:text-slate-300">{accounts.length ? "Nenhuma conta encontrada com esses filtros." : "Nenhuma conta cadastrada ainda."}</p>
       ) : null}
 
-      {!isLoading && accounts.length > 0 ? (
+      {visibleAccounts.length > 0 && <p className="text-sm text-slate-600 dark:text-slate-300">{visibleAccounts.length} {visibleAccounts.length === 1 ? "conta" : "contas"}</p>}
+      {visibleAccounts.length > 0 ? (
         <div className="mt-4 space-y-6">
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Ativas</h4>
-            {activeAccounts.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Nenhuma conta ativa no momento.</p>
-            ) : (
+          {activeAccounts.length > 0 && <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Ativas</h3>
               <ul className="mt-3 space-y-3">
                 {activeAccounts.map((account) => {
                   const isUpdatingStatus = updatingAccountStatusId === account.accountId;
@@ -133,14 +146,9 @@ export function AccountList({
                   );
                 })}
               </ul>
-            )}
-          </div>
-
-          <div>
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Desativadas</h4>
-            {inactiveAccounts.length === 0 ? (
-              <p className="mt-3 text-sm text-slate-500 dark:text-slate-300">Nenhuma conta desativada.</p>
-            ) : (
+          </div>}
+          {inactiveAccounts.length > 0 && <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Desativadas</h3>
               <ul className="mt-3 space-y-3">
                 {inactiveAccounts.map((account) => {
                   const isUpdatingStatus = updatingAccountStatusId === account.accountId;
@@ -185,16 +193,17 @@ export function AccountList({
                   );
                 })}
               </ul>
-            )}
-          </div>
+          </div>}
         </div>
       ) : null}
-      {selectedAccount && (!isLoading && !error && !activeAccounts.some(item => item.accountId === selectedAccount.accountId && item.accountType === "CHECKING_ACCOUNT") ?
-        <div className="mt-6 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-          <p role="alert">A conta {selectedAccount.name} não está mais disponível. A visualização foi encerrada.</p>
-          <button type="button" className="mt-3 rounded-md border border-slate-400 px-3 py-2 text-sm" onClick={() => setSelectedAccount(null)}>Fechar</button>
-        </div> : <AccountMovementsSection key={selectedAccount.accountId} account={selectedAccount}
-          getAccessToken={getAccessToken} loadAccounts={loadAccounts} onClose={() => setSelectedAccount(null)} />)}
+      {selectedAccount && (
+        <FormModal open wide title="Movimentações" initialField="button[aria-label='Fechar']" onRequestDismiss={() => setSelectedAccount(null)}>
+          {!isLoading && !error && !accounts.some(item => item.accountId === selectedAccount.accountId && item.active !== false && item.accountType === "CHECKING_ACCOUNT")
+            ? <p role="alert" className="p-5 sm:p-7">A conta {selectedAccount.name} não está mais disponível.</p>
+            : <AccountMovementsSection key={selectedAccount.accountId} account={selectedAccount}
+                getAccessToken={getAccessToken} loadAccounts={loadAccounts} />}
+        </FormModal>
+      )}
     </section>
   );
 }

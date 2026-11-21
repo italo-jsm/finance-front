@@ -1,262 +1,186 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Expense, expenseCategoryOptions } from "../types/expense";
 import { AccountSummary } from "../types/account";
+
+export type ExpenseField = "value" | "description" | "accountId" | "date" | "installments" | "paidFromAccountId";
+export type ExpenseFieldErrors = Partial<Record<ExpenseField, string>>;
 
 type ExpenseFormProps = {
   expense: Expense;
   setExpense: (value: Expense) => void;
   isEditing: boolean;
-  isSubmitting: boolean;
+  submission: "idle" | "saving" | "slow" | "error" | "uncertain";
+  submitError: string;
+  fieldErrors: ExpenseFieldErrors;
   accounts: AccountSummary[];
   isLoadingAccounts: boolean;
   accountsError: string;
-  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
+  reviewByDate: boolean;
+  onReviewRecent: () => void;
+  onResume: () => void;
 };
 
-export function ExpenseForm({
-  expense,
-  setExpense,
-  isEditing,
-  isSubmitting,
-  accounts,
-  isLoadingAccounts,
-  accountsError,
-  onSubmit,
-  onCancel,
-}: ExpenseFormProps) {
-  const selectedExpenseAccount = accounts.find((account) => account.accountId === expense.accountId);
-  const isCreditCardAccount = selectedExpenseAccount?.accountType === "CREDIT_CARD";
-  const hasCurrentSelection = accounts.some((account) => account.accountId === expense.accountId);
-  const paymentAccounts = accounts.filter((account) => account.accountType === "CHECKING_ACCOUNT");
-  const hasCurrentPaymentSelection = paymentAccounts.some((account) => account.accountId === expense.paidFromAccountId);
+const inputClass = "block min-h-11 w-full min-w-0 rounded-lg border border-slate-400 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-70 dark:border-slate-500 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-400 aria-invalid:border-red-600";
+const buttonClass = "min-h-11 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white hover:bg-blue-800 disabled:bg-blue-100 disabled:text-blue-900 dark:disabled:bg-slate-700 dark:disabled:text-slate-200";
 
-  useEffect(() => {
-    if (!isCreditCardAccount && expense.installments !== 1) {
-      setExpense({ ...expense, installments: 1 });
-    }
-  }, [expense, isCreditCardAccount, setExpense]);
+function Field({ id, label, error, children }: { id: string; label: string; error?: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <label htmlFor={id} className="mb-1 block text-sm font-semibold">{label}</label>
+      {children}
+      {error && <p id={`${id}-error`} className="mt-1 text-sm font-medium text-red-700 dark:text-red-300">{error}</p>}
+    </div>
+  );
+}
+
+const amountFormat = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, useGrouping: false });
+
+function parseAmount(input: string) {
+  const value = input.trim();
+  if (!/^(?:\d{1,3}(?:\.\d{3})+,\d{1,2}|\d+(?:[,.]\d{1,2})?)$/.test(value)) return NaN;
+  return Number(value.includes(",") ? value.replaceAll(".", "").replace(",", ".") : value);
+}
+
+export function ExpenseForm({
+  expense, setExpense, isEditing, submission, submitError, fieldErrors, accounts, isLoadingAccounts,
+  accountsError, onSubmit, onCancel, reviewByDate, onReviewRecent, onResume,
+}: ExpenseFormProps) {
+  const [amount, setAmount] = useState(() => expense.value ? amountFormat.format(expense.value) : "");
+  const [detailsOpen, setDetailsOpen] = useState(expense.isPaid || expense.installments > 1);
+  const selectedAccount = accounts.find((account) => account.accountId === expense.accountId);
+  const isCreditCard = selectedAccount?.accountType === "CREDIT_CARD";
+  const paymentAccounts = accounts.filter((account) => account.accountType === "CHECKING_ACCOUNT" && (account.active !== false || account.accountId === expense.paidFromAccountId));
+  const isSubmitting = submission === "saving" || submission === "slow";
+  const uncertain = submission === "uncertain";
+  const lockFields = isSubmitting || uncertain;
+
+  function fieldProps(field: ExpenseField) {
+    return {
+      id: `expense-${field}`,
+      className: inputClass,
+      "aria-invalid": Boolean(fieldErrors[field]),
+      "aria-describedby": fieldErrors[field] ? `expense-${field}-error` : undefined,
+    };
+  }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label htmlFor="date" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-            Data
-          </label>
-          <input
-            id="date"
-            type="date"
-            value={expense.date}
-            onChange={(e) => setExpense({ ...expense, date: e.target.value })}
-            className="mt-1 block w-full min-w-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-          />
+    <form noValidate onSubmit={onSubmit} className="flex flex-1 flex-col gap-4 pt-4">
+      {(submission === "error" || uncertain) && (
+        <div className={`mx-5 rounded-lg p-3 text-sm sm:mx-7 ${uncertain ? "bg-blue-50 text-blue-950 dark:bg-blue-950 dark:text-blue-100" : "bg-red-50 text-red-900 dark:bg-red-950 dark:text-red-100"}`}>
+          <p role="alert" className="font-semibold">{uncertain ? "Salvamento ainda não confirmado" : submitError}</p>
+          <p className="mt-1">{uncertain ? "Confira se a despesa aparece na lista antes de tentar novamente. Seus dados continuam aqui." : "Seus dados continuam preenchidos. Tente novamente."}</p>
         </div>
-
-        {isCreditCardAccount && (
-          <div>
-            <label htmlFor="installments" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-              Parcelas
-            </label>
-            <input
-              id="installments"
-              type="number"
-              min="1"
-              value={expense.installments}
-              onChange={(e) => setExpense({ ...expense, installments: Number(e.target.value) || 1 })}
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            />
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Use `1` para despesa a vista.
-            </p>
+      )}
+      <fieldset disabled={lockFields} className="min-w-0 space-y-4 px-5 sm:px-7">
+        <Field id="expense-value" label="Valor" error={fieldErrors.value}>
+          <div className="relative">
+            <span aria-hidden="true" className="pointer-events-none absolute top-2.5 left-3 text-slate-600 dark:text-slate-300">R$</span>
+            <input {...fieldProps("value")} className={`${inputClass} pl-10`} required type="text" inputMode="decimal" placeholder="0,00" value={amount}
+              onChange={(event) => {
+                const input = event.target.value;
+                setAmount(input);
+                setExpense({ ...expense, value: parseAmount(input) });
+              }} />
           </div>
-        )}
+        </Field>
 
-        <div>
-          <label htmlFor="value" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-            Valor
-          </label>
-          <input
-            id="value"
-            type="number"
-            step="0.01"
-            value={expense.value || ""}
-            onChange={(e) => setExpense({ ...expense, value: Number(e.target.value) })}
-            placeholder="0.00"
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-          />
-        </div>
+        <Field id="expense-description" label="Descrição" error={fieldErrors.description}>
+          <input {...fieldProps("description")} required type="text" placeholder="Ex.: compras da semana" value={expense.description}
+            onChange={(event) => setExpense({ ...expense, description: event.target.value })} />
+        </Field>
 
-        <div>
-          <label htmlFor="accountId" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-            Conta
-          </label>
-          <select
-            id="accountId"
-            value={expense.accountId}
-            onChange={(e) => {
-              const selectedAccount = accounts.find((account) => account.accountId === e.target.value);
+        <Field id="expense-accountId" label="Conta" error={fieldErrors.accountId}>
+          <select {...fieldProps("accountId")} required value={expense.accountId} disabled={isLoadingAccounts || (!accounts.length && !expense.accountId)}
+            onChange={(event) => {
+              const account = accounts.find((item) => item.accountId === event.target.value);
+              if (account?.accountType === "CREDIT_CARD") setDetailsOpen(true);
               setExpense({
                 ...expense,
-                accountId: e.target.value,
-                accountName: selectedAccount?.name ?? "",
-                installments: selectedAccount?.accountType === "CREDIT_CARD" ? expense.installments : 1,
+                accountId: event.target.value,
+                accountName: account?.name ?? "",
+                installments: account?.accountType === "CREDIT_CARD" ? expense.installments : 1,
               });
-            }}
-            disabled={isLoadingAccounts || accounts.length === 0}
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-          >
-            <option value="">
-              {isLoadingAccounts
-                ? "Carregando contas..."
-                : accounts.length
-                  ? "Selecione uma conta"
-                  : "Nenhuma conta disponivel"}
-            </option>
-            {!hasCurrentSelection && expense.accountId && (
-              <option value={expense.accountId}>{expense.accountName || "Conta atual"}</option>
-            )}
-            {accounts.map((account) => (
-              <option key={account.accountId} value={account.accountId}>
-                {account.name}
-              </option>
-            ))}
+            }}>
+            <option value="">{isLoadingAccounts ? "Carregando contas…" : accounts.length ? "Selecione uma conta" : "Nenhuma conta disponível"}</option>
+            {expense.accountId && !selectedAccount && <option value={expense.accountId}>{expense.accountName || "Conta atual"}</option>}
+            {accounts.filter((account) => account.active !== false || account.accountId === expense.accountId).map((account) => <option key={account.accountId} value={account.accountId}>{account.name}</option>)}
           </select>
-          {accountsError && <p className="mt-2 text-sm text-red-600 dark:text-red-300">{accountsError}</p>}
-          {!accountsError && !isLoadingAccounts && accounts.length === 0 && (
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Cadastre ao menos uma conta para vincular a despesa.
-            </p>
+          {accountsError && <p className="mt-1 text-sm text-red-700 dark:text-red-300">{accountsError}</p>}
+          {!accountsError && !isLoadingAccounts && !accounts.length && !expense.accountId && (
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Cadastre uma conta para vincular a despesa.</p>
           )}
-          {!accountsError && !isLoadingAccounts && selectedExpenseAccount && !isCreditCardAccount && (
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Parcelas ficam disponiveis apenas para cartao de credito.
-            </p>
-          )}
-        </div>
+        </Field>
 
-        <div className="sm:col-span-2">
-          <label htmlFor="description" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-            Descrição
-          </label>
-          <input
-            id="description"
-            type="text"
-            value={expense.description}
-            onChange={(e) => setExpense({ ...expense, description: e.target.value })}
-            placeholder="Ex: Conta de luz"
-            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-          />
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-900/60">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Categoria</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Escolha uma categoria para facilitar relatórios e comparativos.
-            </p>
-          </div>
-          <span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-semibold text-cyan-900 dark:bg-cyan-950 dark:text-cyan-200">
-            {expenseCategoryOptions.find((option) => option.value === expense.category)?.label}
-          </span>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-4">
-          {expenseCategoryOptions.map((option) => {
-            const selected = option.value === expense.category;
-
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setExpense({ ...expense, category: option.value })}
-                className={`rounded-xl border px-3 py-2 text-left text-sm font-medium transition ${
-                  selected
-                    ? "border-cyan-500 bg-cyan-500 text-slate-950 shadow-sm"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-cyan-300 hover:bg-cyan-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-cyan-700 dark:hover:bg-slate-800"
-                }`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-950">
-        <label className="flex items-start gap-3">
-          <input
-            type="checkbox"
-            checked={expense.isPaid}
-            onChange={(e) =>
-              setExpense({
-                ...expense,
-                isPaid: e.target.checked,
-                paidFromAccountId: e.target.checked ? expense.paidFromAccountId : "",
-              })
-            }
-            className="mt-1 h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
-          />
-          <div>
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Despesa paga</p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Marque se a despesa ja foi quitada e vincule a conta de onde saiu o pagamento.
-            </p>
-          </div>
-        </label>
-
-        {expense.isPaid && (
-          <div className="mt-4">
-            <label htmlFor="paidFromAccountId" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-              Conta de pagamento
-            </label>
-            <select
-              id="paidFromAccountId"
-              value={expense.paidFromAccountId}
-              onChange={(e) => setExpense({ ...expense, paidFromAccountId: e.target.value })}
-              disabled={paymentAccounts.length === 0}
-              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-            >
-              <option value="">
-                {paymentAccounts.length ? "Selecione a conta de pagamento" : "Nenhuma conta corrente disponivel"}
-              </option>
-              {!hasCurrentPaymentSelection && expense.paidFromAccountId && (
-                <option value={expense.paidFromAccountId}>Conta atual</option>
-              )}
-              {paymentAccounts.map((account) => (
-                <option key={account.accountId} value={account.accountId}>
-                  {account.name}
-                </option>
-              ))}
+        <div className="grid gap-4 min-[380px]:grid-cols-2">
+          <Field id="expense-date" label="Data" error={fieldErrors.date}>
+            <input {...fieldProps("date")} required type="date" value={expense.date} onChange={(event) => setExpense({ ...expense, date: event.target.value })} />
+          </Field>
+          <Field id="expense-category" label="Categoria (opcional)">
+            <select id="expense-category" className={inputClass} value={expense.category}
+              onChange={(event) => setExpense({ ...expense, category: event.target.value as Expense["category"] })}>
+              {expenseCategoryOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
             </select>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Apenas contas correntes podem ser usadas como origem do pagamento.
-            </p>
+          </Field>
+        </div>
+
+        <div className="rounded-lg bg-blue-50 dark:bg-slate-800">
+          <button type="button" aria-expanded={detailsOpen || Boolean(fieldErrors.installments || fieldErrors.paidFromAccountId)} aria-controls="expense-payment-details"
+            className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm font-semibold text-blue-800 dark:text-blue-200"
+            onClick={() => setDetailsOpen((open) => !open)}>
+            <span aria-hidden="true">{detailsOpen || fieldErrors.installments || fieldErrors.paidFromAccountId ? "▾" : "›"}</span>
+            {isCreditCard ? "Pagamento e parcelas" : "Pagamento"}
+          </button>
+          <div id="expense-payment-details" hidden={!detailsOpen && !fieldErrors.installments && !fieldErrors.paidFromAccountId} className="space-y-3 px-3 pb-3">
+            {isCreditCard && (
+              <Field id="expense-installments" label="Parcelas" error={fieldErrors.installments}>
+                <input {...fieldProps("installments")} type="number" min="1" step="1" value={expense.installments || ""}
+                  onChange={(event) => setExpense({ ...expense, installments: event.target.valueAsNumber })} />
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Use 1 para pagamento à vista.</p>
+              </Field>
+            )}
+            <label className="flex min-h-11 items-center gap-2 text-sm font-semibold">
+              <input type="checkbox" className="size-4 accent-blue-700" checked={expense.isPaid}
+                onChange={(event) => setExpense({ ...expense, isPaid: event.target.checked, paidFromAccountId: event.target.checked ? expense.paidFromAccountId : "" })} />
+              Despesa paga
+            </label>
+            {expense.isPaid && (
+              <Field id="expense-paidFromAccountId" label="Conta de pagamento" error={fieldErrors.paidFromAccountId}>
+                <select {...fieldProps("paidFromAccountId")} required value={expense.paidFromAccountId}
+                  onChange={(event) => setExpense({ ...expense, paidFromAccountId: event.target.value })}>
+                  <option value="">{paymentAccounts.length ? "Selecione uma conta corrente" : "Nenhuma conta corrente disponível"}</option>
+                  {expense.paidFromAccountId && !paymentAccounts.some((account) => account.accountId === expense.paidFromAccountId) &&
+                    <option value={expense.paidFromAccountId}>Conta atual</option>}
+                  {paymentAccounts.map((account) => <option key={account.accountId} value={account.accountId}>{account.name}</option>)}
+                </select>
+              </Field>
+            )}
+          </div>
+        </div>
+      </fieldset>
+
+      <footer className="sticky bottom-0 z-10 mt-auto shrink-0 space-y-2 border-t border-slate-200 bg-white px-5 py-4 sm:px-7 dark:border-slate-700 dark:bg-slate-900">
+        {uncertain ? (
+          <div className="grid gap-2">
+            <button type="button" className={buttonClass} onClick={onReviewRecent}>{reviewByDate ? "Ver despesas da data" : "Ver despesas recentes"}</button>
+            <button type="button" className="min-h-11 rounded-lg border border-slate-400 px-3 text-sm font-semibold" onClick={onResume}>Já conferi, voltar ao formulário</button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={isSubmitting} onClick={onCancel} className="min-h-11 rounded-lg border border-slate-400 px-4 font-semibold disabled:opacity-60">Cancelar</button>
+            <button type="submit" className={`grow ${buttonClass}`}
+              disabled={isSubmitting || isLoadingAccounts || (!accounts.length && !expense.accountId) || (!isEditing && !amount && !expense.description && !expense.accountId)}>
+              {isSubmitting ? "Salvando…" : submission === "error" ? "Tentar novamente" : isEditing ? "Atualizar despesa" : "Salvar despesa"}
+            </button>
           </div>
         )}
-      </div>
-
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700"
-        >
-          {isSubmitting ? "Salvando..." : isEditing ? "Atualizar" : "Salvar despesa"}
-        </button>
-        {isEditing && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600"
-          >
-            Cancelar
-          </button>
-        )}
-      </div>
+        <p role="status" className="text-center text-sm text-slate-600 empty:hidden dark:text-slate-300">
+          {submission === "slow" ? "Ainda salvando. Seus dados continuam aqui." : submission === "saving" ? "Aguardando a confirmação do salvamento." : ""}
+        </p>
+      </footer>
     </form>
   );
 }

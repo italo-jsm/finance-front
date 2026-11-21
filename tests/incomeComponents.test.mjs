@@ -40,3 +40,12 @@ test('formulário oferece apenas conta corrente e mantém campos obrigatórios',
   assert.equal((html.match(/required=""/g) ?? []).length, 5);
   assert.match(html, /Salvar recebimento/);
 });
+
+test('recebimentos mantêm a lista durante uma atualização e oferecem nova tentativa se a consulta falhar', () => {
+  assert.match(list({ loading: true }), /Atualizando recebimentos…/);
+  assert.match(list({ loading: true }), /Salário/);
+  const failed = list({ error: 'Falha na consulta', onRetry() {} });
+  assert.match(failed, /Tentar novamente/);
+  assert.match(failed, /Salário/);
+  assert.match(list({ incomes: [], filtered: true }), /esses filtros/);
+});

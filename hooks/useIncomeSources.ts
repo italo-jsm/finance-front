@@ -25,7 +25,6 @@ export function useIncomeSources() {
       if (active.current && !controller.signal.aborted) setSources([...items].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
     } catch (error) {
       if (active.current && !controller.signal.aborted) {
-        setSources([]);
         setError(error instanceof Error ? error.message : 'Não foi possível carregar as fontes de renda.');
       }
     } finally {

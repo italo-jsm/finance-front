@@ -5,6 +5,8 @@ import { useAuth } from '@/components/AuthProvider';
 import { useIncomeSources } from '@/hooks/useIncomeSources';
 import { IncomeForm } from '@/components/IncomeForm';
 import { IncomeList } from '@/components/IncomeList';
+import { ListToolbar } from './ListToolbar';
+import { RecordFormModal } from './FormModal';
 import { buildIncomePayload, getLocalDate, incomeToForm, isValidMonth } from '@/lib/incomeForm';
 import { createIncome, listIncomes, receiveIncome, updateIncome } from '@/lib/incomesApi';
 import { emptyIncomeForm, type Income } from '@/types/income';
@@ -23,7 +25,12 @@ export function IncomesSection({ accounts, accountsLoading, accountsError, onAcc
   const { sources, loading: sourcesLoading, error: sourcesError } = useIncomeSources();
   const tokenGetter = useRef(getAccessToken);
   useEffect(() => { tokenGetter.current = getAccessToken; }, [getAccessToken]);
-  const [month, setMonth] = useState(() => getLocalDate().slice(0, 7));
+  const defaultFilters = { month: getLocalDate().slice(0, 7), account: '', source: '', status: '' };
+  const [filters, setFilters] = useState(defaultFilters);
+  const { month } = filters;
+  const [loadedMonth, setLoadedMonth] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [incomes, setIncomes] = useState<Income[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState('');
@@ -36,7 +43,6 @@ export function IncomesSection({ accounts, accountsLoading, accountsError, onAcc
   const request = useRef<AbortController | null>(null);
   const mounted = useRef(false);
   const busy = useRef(false);
-  const formRef = useRef<HTMLDivElement>(null);
   const mutationInProgress = submitting || receivingId !== null;
   const checkingAccounts = accounts.filter(account => account.accountType === 'CHECKING_ACCOUNT');
   const prerequisitesMissing = sourcesLoading || accountsLoading || Boolean(sourcesError || accountsError) || !sources.length || !checkingAccounts.length;
@@ -45,12 +51,15 @@ export function IncomesSection({ accounts, accountsLoading, accountsError, onAcc
     request.current?.abort();
     const controller = new AbortController();
     request.current = controller;
-    setLoading(true); setListError(''); setIncomes([]);
+    setLoading(true); setListError('');
     try {
       const token = await tokenGetter.current();
       if (controller.signal.aborted) return;
       const items = await listIncomes(selectedMonth, token, controller.signal);
-      if (mounted.current && !controller.signal.aborted) setIncomes(items);
+      if (mounted.current && !controller.signal.aborted) {
+        setIncomes(items);
+        setLoadedMonth(selectedMonth);
+      }
     } catch (error) {
       if (mounted.current && !controller.signal.aborted) setListError(errorMessage(error));
     } finally {
@@ -64,11 +73,13 @@ export function IncomesSection({ accounts, accountsLoading, accountsError, onAcc
     return () => { mounted.current = false; request.current?.abort(); };
   }, [month, reload]);
 
-  function resetForm() { setValues(emptyIncomeForm); setEditingId(null); }
+  function resetForm() {
+    setFormOpen(false); setDirty(false); setValues(emptyIncomeForm); setEditingId(null); setError('');
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy.current || prerequisitesMissing) return;
+    if (!formOpen || busy.current || prerequisitesMissing) return;
     setError(''); setSuccess('');
     busy.current = true; setSubmitting(true);
     try {
@@ -83,10 +94,10 @@ export function IncomesSection({ accounts, accountsLoading, accountsError, onAcc
       if (!mounted.current) return;
       // A successful write stays successful even if the following query fails.
       resetForm();
-      setSuccess(editingId ? 'Recebimento atualizado com sucesso.' : 'Recebimento cadastrado como pendente.');
       const savedMonth = payload.expectedDate.slice(0, 7);
-      if (savedMonth === month) await reload(month);
-      else setMonth(savedMonth);
+      const confirmation = editingId ? 'Recebimento atualizado com sucesso.' : 'Recebimento cadastrado como pendente.';
+      setSuccess(savedMonth === month ? confirmation : `${confirmation} Veja o mês ${savedMonth.split('-').reverse().join('/')} nos filtros.`);
+      void reload(month);
     } catch (error) {
       if (mounted.current) setError(errorMessage(error));
     } finally {
@@ -96,7 +107,7 @@ export function IncomesSection({ accounts, accountsLoading, accountsError, onAcc
   }
 
   async function receive(income: Income) {
-    if (busy.current || loading || income.receivedDate !== null || income.status === 'RECEIVED') return;
+    if (busy.current || loading || loadedMonth !== month || income.receivedDate !== null || income.status === 'RECEIVED') return;
     busy.current = true; setReceivingId(income.id); setError(''); setSuccess('');
     // Cancel an older list request so it cannot restore a pending copy after success.
     request.current?.abort();
@@ -121,37 +132,53 @@ export function IncomesSection({ accounts, accountsLoading, accountsError, onAcc
   }
 
   function edit(income: Income) {
-    if (busy.current || income.receivedDate !== null || income.status === 'RECEIVED') return;
+    if (busy.current || loadedMonth !== month || income.receivedDate !== null || income.status === 'RECEIVED') return;
     setValues(incomeToForm(income)); setEditingId(income.id); setError(''); setSuccess('');
-    formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setDirty(false); setFormOpen(true);
   }
 
+  const visibleIncomes = incomes.filter((income) => {
+    const status = income.receivedDate !== null || income.status === 'RECEIVED' ? 'RECEIVED' : 'PENDING';
+    return (!filters.account || income.accountId === filters.account) &&
+      (!filters.source || income.incomeSourceId === filters.source) &&
+      (!filters.status || status === filters.status);
+  });
+  const fields = [
+    { name: 'month', label: 'Mês da data prevista', type: 'month' as const },
+    { name: 'account', label: 'Conta', options: [{ value: '', label: 'Todas as contas' }, ...checkingAccounts.map((account) => ({ value: account.accountId, label: account.name }))] },
+    { name: 'source', label: 'Fonte de renda', options: [{ value: '', label: 'Todas as fontes' }, ...sources.map((source) => ({ value: source.id, label: source.name }))] },
+    { name: 'status', label: 'Situação', options: [{ value: '', label: 'Todas' }, { value: 'PENDING', label: 'Pendente' }, { value: 'RECEIVED', label: 'Recebido' }] },
+  ];
+
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-      <div ref={formRef}>
-        <h2 className="text-2xl font-bold">{editingId ? 'Editar recebimento' : 'Cadastrar recebimento'}</h2>
-        {(accountsLoading || sourcesLoading) && <p role="status" className="mt-3 text-sm">Carregando fontes e contas...</p>}
-        {(sourcesError || accountsError) && <p role="alert" className="mt-3 text-red-700 dark:text-red-300">{sourcesError || accountsError}</p>}
-        {!sourcesLoading && !sourcesError && !sources.length && <p className="mt-3 text-sm">Cadastre uma fonte de renda em Fontes de renda para continuar.</p>}
-        {!accountsLoading && !accountsError && !checkingAccounts.length && <p className="mt-3 text-sm">Cadastre uma conta corrente em Contas para continuar.</p>}
-        <IncomeForm values={values} accounts={accounts} sources={sources} editing={Boolean(editingId)} disabled={mutationInProgress || prerequisitesMissing} submitting={submitting} error={error}
-          onChange={setValues} onSubmit={save} onCancel={() => { if (!busy.current) { resetForm(); setError(''); } }} />
-        {success && <p role="status" className="mt-4 text-emerald-700 dark:text-emerald-300">{success}</p>}
+    <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 dark:border-slate-700 dark:bg-slate-900">
+      <ListToolbar title="Recebimentos" createLabel="Novo recebimento" disabled={mutationInProgress} fields={fields} filters={filters} defaults={defaultFilters}
+        onApply={(next) => { if (!busy.current && isValidMonth(next.month)) setFilters(next); }}
+        onCreate={() => { resetForm(); setSuccess(''); setFormOpen(true); }} />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <p>Previsão: {month.split('-').reverse().join('/')}</p>
+        {!listError && <button type="button" disabled={loading || mutationInProgress} onClick={() => void reload(month)}
+          className="min-h-11 px-2 font-semibold text-blue-800 hover:underline disabled:opacity-60 dark:text-blue-200">Atualizar lista</button>}
       </div>
-      <div className="mt-8 border-t border-slate-200 pt-6 dark:border-slate-700">
-        <h3 className="text-lg font-semibold">Recebimentos previstos</h3>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Ao marcar Recebido, a confirmação usa a data de hoje e não poderá ser desfeita.</p>
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <div>
-            <label htmlFor="income-month" className="block text-sm font-medium">Mês da data prevista</label>
-            <input id="income-month" type="month" min="0001-01" max="9999-12" value={month} disabled={mutationInProgress}
-              onChange={event => { if (!busy.current && isValidMonth(event.target.value)) setMonth(event.target.value); }}
-              className="mt-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" />
-          </div>
-          <button type="button" disabled={loading || mutationInProgress} onClick={() => { void reload(month); }} className="rounded-lg border border-slate-300 px-4 py-2 disabled:opacity-60 dark:border-slate-700">Atualizar lista</button>
-        </div>
-        <IncomeList incomes={incomes} accounts={accounts} sources={sources} loading={loading} error={listError} receivingId={receivingId} disabled={mutationInProgress} onReceive={receive} onEdit={edit} />
-      </div>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Ao marcar Recebido, a confirmação usa a data de hoje e não poderá ser desfeita.</p>
+      {success && <p role="status" className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-900 dark:bg-green-950 dark:text-green-100">{success}</p>}
+      {!formOpen && error && <p role="alert" className="mt-3 text-red-700 dark:text-red-300">{error}</p>}
+      {(loading || listError) && loadedMonth && loadedMonth !== month && visibleIncomes.length > 0 && (
+        <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">Exibindo o resultado anterior de {loadedMonth.split('-').reverse().join('/')}.</p>
+      )}
+      <IncomeList incomes={visibleIncomes} accounts={accounts} sources={sources} loading={loading} error={listError} receivingId={receivingId}
+        disabled={mutationInProgress || loading || loadedMonth !== month} onReceive={receive} onEdit={edit}
+        filtered={Boolean(filters.account || filters.source || filters.status)} onRetry={() => void reload(month)} />
+      {formOpen && <RecordFormModal title={editingId ? 'Editar recebimento' : 'Novo recebimento'} dirty={dirty} saving={submitting} onDismiss={resetForm}>
+        {(cancel) => <>
+          {(accountsLoading || sourcesLoading) && <p role="status" className="text-sm">Carregando fontes e contas…</p>}
+          {(sourcesError || accountsError) && <p role="alert" className="text-red-700 dark:text-red-300">{sourcesError || accountsError}</p>}
+          {!sourcesLoading && !sourcesError && !sources.length && <p className="text-sm">Cadastre uma fonte de renda em Fontes de renda para continuar.</p>}
+          {!accountsLoading && !accountsError && !checkingAccounts.length && <p className="text-sm">Cadastre uma conta corrente em Contas para continuar.</p>}
+          <IncomeForm values={values} accounts={accounts} sources={sources} editing={Boolean(editingId)} disabled={mutationInProgress || prerequisitesMissing} submitting={submitting} error={error}
+            onChange={(next) => { setValues(next); setDirty(true); }} onSubmit={save} onCancel={cancel} />
+        </>}
+      </RecordFormModal>}
     </section>
   );
 }

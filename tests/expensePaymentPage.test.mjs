@@ -100,3 +100,222 @@ test('sem busca anterior não consulta histórico após pagamento', async () => 
   const dates = urls.filter(url => url.includes('beginDate=')).map(url => new URL(url).searchParams.get('beginDate'));
   assert.ok(dates.length > 0); assert.equal(new Set(dates).size, 1); r.unmount();
 });
+
+test('salvamento confirma após o POST, mesmo com a atualização da lista pendente ou indisponível', async () => {
+  let completeSave;
+  let completeRecent;
+  let saves = 0;
+  global.fetch = async (url, options) => {
+    if (options?.method === 'POST') {
+      saves++;
+      return new Promise(resolve => { completeSave = resolve; });
+    }
+    if (url.includes('/expenses')) {
+      if (saves) return new Promise(resolve => { completeRecent = resolve; });
+      return Response.json({ expenses: [bill] });
+    }
+    return Response.json([account(1000)]);
+  };
+
+  const previousWindow = global.window;
+  global.window = { setTimeout, clearTimeout };
+  try {
+    const r = runtime(); await r.settle(); r.menu('transactions'); await r.settle();
+    assert.equal(r.props('ExpenseModal'), undefined);
+    const filters = { ...r.props('ExpenseList').filters, accountId: 'a' };
+    r.props('ExpenseList').onApplyFilters(filters);
+    r.props('ExpenseList').onNewExpense();
+    r.render();
+    assert.equal(r.props('ExpenseModal').open, true);
+    const form = r.props('ExpenseForm');
+    form.setExpense({ ...form.expense, description: 'Mercado', value: 12.90, accountId: 'a' });
+    r.render();
+    const event = { preventDefault() {} };
+    const submit = r.props('ExpenseForm').onSubmit;
+    const saving = submit(event);
+    await submit(event);
+    assert.equal(saves, 1);
+    r.render();
+    assert.equal(r.props('ExpenseForm').submission, 'saving');
+
+    completeSave(new Response(null, { status: 204 }));
+    await saving;
+    r.render();
+    assert.equal(r.props('ExpenseForm'), undefined);
+    assert.equal(r.props('ExpenseModal'), undefined);
+    assert.equal(r.props('ExpenseList').feedback.props.children.props.children[0].props.children, 'Despesa salva');
+    assert.deepEqual(r.props('ExpenseList').filters, filters);
+    assert.equal(r.props('ExpenseList').isLoading, true);
+    assert.equal(r.props('ExpenseList').expenses.length, 1);
+
+    completeRecent(new Response(null, { status: 503 }));
+    await r.settle();
+    assert.equal(r.props('ExpenseForm'), undefined);
+    assert.match(r.props('ExpenseList').error, /atualizar/);
+    assert.equal(r.props('ExpenseList').expenses.length, 1);
+    r.unmount();
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test('rejeição e resultado incerto preservam o formulário e o resultado incerto bloqueia reenvio direto', async () => {
+  const previousWindow = global.window;
+  global.window = { setTimeout, clearTimeout };
+  let saves = 0;
+  global.fetch = async (url, options) => {
+    if (options?.method === 'POST') {
+      if (++saves === 1) return Response.json({ message: 'Conta indisponível' }, { status: 422 });
+      throw new TypeError('Conexão interrompida');
+    }
+    return Response.json(url.includes('/expenses') ? { expenses: [] } : [account(1000)]);
+  };
+
+  try {
+    const r = runtime(); await r.settle(); r.menu('transactions'); await r.settle();
+    assert.equal(r.props('ExpenseModal'), undefined);
+    r.props('ExpenseList').onNewExpense();
+    r.render();
+    assert.equal(r.props('ExpenseModal').open, true);
+    const form = r.props('ExpenseForm');
+    const draft = { ...form.expense, description: 'Mercado', value: 12.90, accountId: 'a' };
+    form.setExpense(draft);
+    const event = { preventDefault() {} };
+    r.render();
+    await r.props('ExpenseForm').onSubmit(event);
+    r.render();
+    assert.equal(r.props('ExpenseForm').submission, 'error');
+    assert.equal(r.props('ExpenseForm').submitError, 'Conta indisponível');
+    assert.deepEqual(r.props('ExpenseForm').expense, draft);
+
+    await r.props('ExpenseForm').onSubmit(event);
+    r.render();
+    assert.equal(r.props('ExpenseForm').submission, 'uncertain');
+    assert.deepEqual(r.props('ExpenseForm').expense, draft);
+    await r.props('ExpenseForm').onSubmit(event);
+    assert.equal(saves, 2);
+    r.props('ExpenseForm').onReviewRecent();
+    r.render();
+    assert.equal(r.props('ExpenseModal').open, false);
+    assert.equal(r.props('ExpenseList').reviewDate, draft.date);
+    r.props('ExpenseList').onReturnToDraft();
+    r.render();
+    assert.equal(r.props('ExpenseModal').open, true);
+    assert.deepEqual(r.props('ExpenseForm').expense, draft);
+    r.unmount();
+  } finally {
+    global.window = previousWindow;
+  }
+});
+
+test('alterar o período preserva a lista durante a consulta e descarta respostas de filtros anteriores', async () => {
+  const pending = new Map();
+  global.fetch = async (url) => {
+    if (!url.includes('/expenses')) return Response.json([account(1000)]);
+    const from = new URL(url).searchParams.get('beginDate');
+    if (from === '2020-01-01' || from === '2021-01-01') {
+      return new Promise(resolve => pending.set(from, { url, resolve }));
+    }
+    return Response.json({ expenses: [bill] });
+  };
+
+  const r = runtime();
+  await r.settle();
+  r.menu('transactions');
+  await r.settle();
+  const original = r.props('ExpenseList');
+  original.onApplyFilters({ ...original.filters, dateFrom: '2020-01-01', dateTo: '2020-01-15' });
+  await r.settle();
+  assert.equal(r.props('ExpenseList').isLoading, true);
+  assert.equal(r.props('ExpenseList').expenses[0].expenseId, bill.id);
+
+  const list = r.props('ExpenseList');
+  list.onApplyFilters({ ...list.filters, dateFrom: '2021-01-01', dateTo: '2021-01-15', accountId: 'a' });
+  await r.settle();
+  const latest = pending.get('2021-01-01');
+  assert.equal(new URL(latest.url).searchParams.get('endDate'), '2021-01-15');
+  latest.resolve(Response.json({ expenses: [{ ...bill, id: 'latest-period', accountId: 'a' }] }));
+  await r.settle();
+  pending.get('2020-01-01').resolve(Response.json({ expenses: [{ ...bill, id: 'old-period' }] }));
+  await r.settle();
+  assert.equal(r.props('ExpenseList').expenses[0].expenseId, 'latest-period');
+  assert.equal(r.props('ExpenseList').filters.accountId, 'a');
+  r.unmount();
+});
+
+test('o modal cancela um formulário vazio e só descarta um rascunho preenchido após confirmação', async () => {
+  global.fetch = async url => Response.json(url.includes('/expenses') ? { expenses: [bill] } : [account(1000)]);
+  const r = runtime();
+  await r.settle();
+  r.menu('transactions');
+  await r.settle();
+  const list = r.props('ExpenseList');
+  const filters = { ...list.filters, accountId: 'a' };
+  list.onApplyFilters(filters);
+  list.onNewExpense();
+  r.render();
+  r.props('ExpenseModal').onRequestDismiss();
+  r.render();
+  assert.equal(r.props('ExpenseModal'), undefined);
+
+  r.props('ExpenseList').onNewExpense();
+  r.render();
+  const form = r.props('ExpenseForm');
+  form.setExpense({ ...form.expense, description: 'Rascunho' });
+  r.render();
+  r.props('ExpenseForm').onCancel();
+  r.render();
+  assert.equal(r.props('ExpenseModal').confirmDiscard, true);
+  r.props('ExpenseModal').onContinueEditing();
+  r.render();
+  assert.equal(r.props('ExpenseForm').expense.description, 'Rascunho');
+  r.props('ExpenseModal').onRequestDismiss();
+  r.render();
+  r.props('ExpenseModal').onDismiss();
+  r.render();
+  assert.equal(r.props('ExpenseModal'), undefined);
+  assert.deepEqual(r.props('ExpenseList').filters, filters);
+
+  r.props('ExpenseList').onEdit(0);
+  r.render();
+  assert.equal(r.props('ExpenseModal').title, 'Editar despesa');
+  assert.equal(r.props('ExpenseForm').expense.expenseId, bill.id);
+  r.unmount();
+});
+
+test('nova conta usa o modal e confirma a gravação enquanto a lista atualiza em segundo plano', async () => {
+  let finishRefresh;
+  let saved = false;
+  global.fetch = async (url, options) => {
+    if (url.includes('/expenses')) return Response.json({ expenses: [] });
+    if (options?.method === 'POST') {
+      saved = true;
+      assert.equal(JSON.parse(options.body).name, 'Nova conta');
+      return new Response(null, { status: 204 });
+    }
+    return saved ? new Promise(resolve => { finishRefresh = resolve; }) : Response.json([account(1000)]);
+  };
+
+  const r = runtime();
+  await r.settle();
+  r.menu('accounts');
+  await r.settle();
+  assert.equal(r.props('RecordFormModal'), undefined);
+  r.props('AccountList').onCreate();
+  r.render();
+  const modal = r.props('RecordFormModal');
+  assert.equal(modal.title, 'Nova conta');
+  modal.children(modal.onDismiss).props.setAccount({ name: 'Nova conta', accountType: 'CHECKING_ACCOUNT', initialBalance: '0', closingDay: '', dueDay: '' });
+  r.render();
+  assert.equal(r.props('RecordFormModal').dirty, true);
+  const form = r.props('RecordFormModal').children(() => {});
+  await form.props.onSubmit({ preventDefault() {} });
+  r.render();
+  assert.equal(r.props('RecordFormModal'), undefined);
+  assert.match(r.props('AccountList').success, /Conta salva/);
+  assert.equal(r.props('AccountList').isLoading, true);
+  assert.equal(r.props('AccountList').accounts.length, 1);
+  finishRefresh(Response.json([account(1000)]));
+  await r.settle();
+  r.unmount();
+});

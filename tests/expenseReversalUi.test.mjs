@@ -41,3 +41,22 @@ test('processamento e reconciliação bloqueiam controles sem inventar data de e
     assert.match(blocked, /disabled=""/); assert.doesNotMatch(blocked, /Estornada em/);
   }
 });
+
+test('lista recente combina filtros e exibe apenas correspondências em ordem decrescente', () => {
+  const first = { ...expense, expenseId: 'first', date: '2026-10-17', description: 'Compra mais recente', value: 150, isPaid: true };
+  const second = { ...first, expenseId: 'second', date: '2026-10-15', description: 'Compra anterior', value: 100 };
+  const html = markup(false, {}, {
+    expenses: [
+      second, first,
+      { ...first, expenseId: 'amount', value: 99, description: 'Valor abaixo' },
+      { ...first, expenseId: 'status', paymentStatus: 'PENDING', description: 'Pagamento pendente' },
+      { ...first, expenseId: 'account', accountId: 'b', description: 'Outra conta' },
+      { ...first, expenseId: 'category', category: 'HOUSING', description: 'Outra categoria' },
+      { ...first, expenseId: 'reversed', reversedDate: '2026-10-18', description: 'Compra estornada' },
+    ],
+    filters: { dateFrom: '', dateTo: '', accountId: 'a', category: 'OTHER', paymentStatus: 'PAID', minimumAmount: 100 },
+  });
+  assert.match(html, /2 despesas/);
+  assert.ok(html.indexOf('Compra mais recente') < html.indexOf('Compra anterior'));
+  assert.doesNotMatch(html, /Valor abaixo|Pagamento pendente|Outra conta|Outra categoria|Compra estornada/);
+});

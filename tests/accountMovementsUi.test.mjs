@@ -118,17 +118,26 @@ test('lista oferece Ver movimentações somente para conta corrente', () => {
   assert.equal((html.match(/Ver movimentações/g) ?? []).length, 1);
 });
 
-test('lista encerra seção quando atualização confirma conta desativada ou ausente', () => {
+test('lista abre extrato no modal e exibe aviso se a conta ficar indisponível', () => {
+  let selectingAccount = false;
   Module._load = function(id, ...args) {
     if (id === '@/types/account') return require('../types/account.ts');
-    if (id === 'react') return { ...React, useState: () => [account, () => {}] };
+    if (id === 'react') return { ...React, useState: (initial) => {
+      if (selectingAccount) { selectingAccount = false; return [account, () => {}]; }
+      return React.useState(initial);
+    } };
     return originalLoad.call(this, id, ...args);
   };
   const path = require.resolve('../components/AccountList.tsx'); delete require.cache[path];
   const Component = require(path).AccountList;
+  const render = (accounts) => {
+    selectingAccount = true;
+    return renderToStaticMarkup(React.createElement(Component, { accounts, getAccessToken: async () => 'token', isLoading: false, error: '', success: '', onEdit() {}, onToggleStatus() {} }));
+  };
+  assert.match(render([account]), /<dialog[\s\S]*Últimas 10 movimentações[\s\S]*<\/dialog>/);
   for (const accounts of [[], [{ ...account, active: false }]]) {
-    const html = renderToStaticMarkup(React.createElement(Component, { accounts, getAccessToken: async () => 'token', isLoading: false, error: '', success: '', onEdit() {}, onToggleStatus() {} }));
-    assert.match(html, /visualização foi encerrada/);
+    const html = render(accounts);
+    assert.match(html, /<dialog[\s\S]*não está mais disponível[\s\S]*<\/dialog>/);
     assert.doesNotMatch(html, /Últimas 10 movimentações/);
   }
 });

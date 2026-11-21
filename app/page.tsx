@@ -4,17 +4,21 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useExpenseReversal } from "@/hooks/useExpenseReversal";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthScreen } from "@/components/AuthScreen";
+import { Dashboard } from "@/components/Dashboard";
 import { IncomesSection } from "@/components/IncomesSection";
 import { IncomeSourcesSection } from "@/components/IncomeSourcesSection";
+import { RecordFormModal } from "@/components/FormModal";
 import { AccountForm } from "@/components/AccountForm";
 import { AccountList } from "@/components/AccountList";
 import type { Expense } from "@/types/expense";
+import { emptyRecentExpenseFilters, type RecentExpenseFilters } from "@/lib/recentExpenseFilters";
 import type { MenuItem } from "@/types/menu";
 import { emptyAccountForm, type AccountFormValues, type AccountSummary, type AccountType } from "@/types/account";
 import { Sidebar } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
-import { ExpenseForm } from "@/components/ExpenseForm";
+import { ExpenseForm, type ExpenseFieldErrors } from "@/components/ExpenseForm";
 import { ExpenseList } from "@/components/ExpenseList";
+import { ExpenseModal } from "@/components/ExpenseModal";
 import { ExpenseHistoryTable, type ExpenseHistoryFilters } from "@/components/ExpenseHistoryTable";
 import { buildAccountPayload } from "@/lib/accountForm";
 import { accountsApiUrl, expensesApiUrl } from "@/lib/config";
@@ -24,19 +28,25 @@ import { useExpensePayment } from '@/hooks/useExpensePayment';
 import { ExpensePaymentForm } from '@/components/ExpensePaymentForm';
 
 function getTodayDate() {
-  return new Date().toISOString().slice(0, 10);
+  return getDateOffset(0);
 }
 
 function getDateOffset(days: number) {
   const date = new Date();
   date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 10);
 }
 
-function buildRecentExpensesUrl() {
+function defaultRecentPeriod() {
+  return { dateFrom: getDateOffset(-6), dateTo: getTodayDate() };
+}
+
+function buildRecentExpensesUrl(filters: RecentExpenseFilters, reviewDate: string) {
+  const defaults = defaultRecentPeriod();
   const searchParams = new URLSearchParams({
-    beginDate: getDateOffset(-5),
-    endDate: getTodayDate(),
+    beginDate: reviewDate || filters.dateFrom || defaults.dateFrom,
+    endDate: reviewDate || filters.dateTo || defaults.dateTo,
   });
   return `${expensesApiUrl}?${searchParams.toString()}`;
 }
@@ -50,7 +60,7 @@ function buildExpenseHistoryUrl(filters: ExpenseHistoryFilters) {
   return `${expensesApiUrl}?${searchParams.toString()}`;
 }
 
-const emptyExpense: Expense = {
+const createEmptyExpense = (): Expense => ({
   date: getTodayDate(),
   description: "",
   value: 0,
@@ -60,7 +70,7 @@ const emptyExpense: Expense = {
   accountName: "",
   isPaid: false,
   paidFromAccountId: "",
-};
+});
 
 type ExpenseApiItem = Partial<{
   expenseId: string;
@@ -269,24 +279,36 @@ function buildExpensePayload(expense: Expense) {
 }
 
 export default function Home() {
-  const { status, profile, tokenParsed, getAccessToken } = useAuth();
+  const { status, getAccessToken } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuItem>("overview");
-  const [expense, setExpense] = useState<Expense>(emptyExpense);
+  const [expense, setExpense] = useState<Expense>(createEmptyExpense);
   const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [isEditingIndex, setIsEditingIndex] = useState<number | null>(null);
-  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+  const [expenseFormKey, setExpenseFormKey] = useState(0);
+  const [expenseFormOpen, setExpenseFormOpen] = useState(false);
+  const [expenseDraftDirty, setExpenseDraftDirty] = useState(false);
+  const [confirmExpenseDiscard, setConfirmExpenseDiscard] = useState(false);
+  const [expenseSubmission, setExpenseSubmission] = useState<"idle" | "saving" | "slow" | "error" | "uncertain">("idle");
+  const [expenseSubmitError, setExpenseSubmitError] = useState("");
+  const [expenseFieldErrors, setExpenseFieldErrors] = useState<ExpenseFieldErrors>({});
+  const [savedExpense, setSavedExpense] = useState<Expense | null>(null);
+  const pendingExpense = useRef<AbortController | null>(null);
+  const reviewRecent = useRef<HTMLHeadingElement>(null);
+  const [expenseReviewDate, setExpenseReviewDate] = useState("");
+  const [recentFilters, setRecentFilters] = useState(emptyRecentExpenseFilters);
   const [isLoadingExpenses, setIsLoadingExpenses] = useState(false);
   const [expensesError, setExpensesError] = useState("");
   const [expenseHistory, setExpenseHistory] = useState<Expense[]>([]);
   const [isLoadingExpenseHistory, setIsLoadingExpenseHistory] = useState(false);
   const [expenseHistoryError, setExpenseHistoryError] = useState("");
   const [hasSearchedExpenseHistory, setHasSearchedExpenseHistory] = useState(false);
+  const [accountFormOpen, setAccountFormOpen] = useState(false);
+  const [accountDraftDirty, setAccountDraftDirty] = useState(false);
+  const pendingAccountSave = useRef(false);
   const [account, setAccount] = useState<AccountFormValues>(emptyAccountForm);
   const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
   const [isSubmittingAccount, setIsSubmittingAccount] = useState(false);
   const [accountSubmitError, setAccountSubmitError] = useState("");
-  const [accountSubmitSuccess, setAccountSubmitSuccess] = useState("");
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
   const [accountsError, setAccountsError] = useState("");
@@ -296,6 +318,7 @@ export default function Home() {
   const [paymentDataVersion, setPaymentDataVersion] = useState(0);
   const historyFilters = useRef<ExpenseHistoryFilters | null>(null);
   const recentVersion = useRef(0);
+  const recentQuery = useRef({ filters: emptyRecentExpenseFilters, reviewDate: "" });
   const historyVersion = useRef(0);
   const accountVersion = useRef(0);
   const sessionVersion = useRef(0);
@@ -347,22 +370,23 @@ export default function Home() {
     return data.map((item) => normalizeExpense(item, availableAccounts));
   }, []);
 
-  const refreshRecentExpenses = useCallback(async () => {
+  const refreshRecentExpenses = useCallback(async (knownToken?: string) => {
     if (status !== "authenticated") return;
 
     const version = ++recentVersion.current;
+    const { filters, reviewDate } = recentQuery.current;
+    const url = buildRecentExpensesUrl(filters, reviewDate);
     setIsLoadingExpenses(true);
     setExpensesError("");
 
     try {
-      const accessToken = await getAccessToken();
-      const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
+      const accessToken = knownToken ?? await getAccessToken();
+      const data = await fetchExpenses(accessToken, url, accounts);
       if (version === recentVersion.current) setExpenses(data);
-    } catch (refreshError) {
+    } catch {
       if (version !== recentVersion.current) return;
-      setExpenses([]);
       setExpensesError(
-        refreshError instanceof Error ? refreshError.message : "Ocorreu um erro ao carregar as despesas.",
+        "Não foi possível atualizar as despesas recentes.",
       );
     } finally {
       if (version === recentVersion.current) setIsLoadingExpenses(false);
@@ -403,6 +427,7 @@ export default function Home() {
     setPaymentDataVersion(value => value + 1);
     const session = sessionVersion.current;
     const recent = ++recentVersion.current;
+    const recentUrl = buildRecentExpensesUrl(recentQuery.current.filters, recentQuery.current.reviewDate);
     const history = ++historyVersion.current;
     const filters = historyFilters.current;
     setIsLoadingExpenses(true);
@@ -420,7 +445,7 @@ export default function Home() {
         if (session === sessionVersion.current) {
           setAccounts(items => items.map(item => ({ ...item, balance: null })));
           setAccountsError("Não foi possível atualizar os saldos. Atualize os dados novamente.");
-          setExpensesError("Não foi possível atualizar as despesas. Verifique sua sessão.");
+          if (recent === recentVersion.current) setExpensesError("Não foi possível atualizar as despesas. Verifique sua sessão.");
           if (filters) setExpenseHistoryError("Não foi possível atualizar o histórico. Verifique sua sessão.");
         }
         throw error;
@@ -440,7 +465,7 @@ export default function Home() {
         })(),
         (async () => {
           try {
-            const data = await fetchExpenses(token, buildRecentExpensesUrl(), accounts);
+            const data = await fetchExpenses(token, recentUrl, accounts);
             if (recent === recentVersion.current) setExpenses(data);
           } catch {
             if (recent !== recentVersion.current) return;
@@ -493,6 +518,20 @@ export default function Home() {
     historyVersion.current++;
     accountVersion.current++;
     if (status !== "authenticated") {
+      pendingExpense.current?.abort();
+      pendingExpense.current = null;
+      setExpense(createEmptyExpense());
+      setExpenseFormKey((key) => key + 1);
+      setExpenseFormOpen(false);
+      setExpenseDraftDirty(false);
+      setConfirmExpenseDiscard(false);
+      setExpenseSubmission("idle");
+      setExpenseSubmitError("");
+      setExpenseFieldErrors({});
+      setSavedExpense(null);
+      setExpenseReviewDate("");
+      setRecentFilters(emptyRecentExpenseFilters);
+      recentQuery.current = { filters: emptyRecentExpenseFilters, reviewDate: "" };
       historyFilters.current = null;
       setExpenses([]);
       setExpensesError("");
@@ -504,10 +543,13 @@ export default function Home() {
       setAccounts([]);
       setAccountsError("");
       setIsLoadingAccounts(false);
+      setAccountFormOpen(false);
+      setAccountDraftDirty(false);
+      pendingAccountSave.current = false;
+      setIsSubmittingAccount(false);
       setAccount(emptyAccountForm);
       setEditingAccountId(null);
       setAccountSubmitError("");
-      setAccountSubmitSuccess("");
       setAccountListFeedbackError("");
       setAccountListFeedbackSuccess("");
       setUpdatingAccountStatusId(null);
@@ -538,7 +580,7 @@ export default function Home() {
         }
 
         try {
-          const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), loadedAccounts);
+          const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(recentQuery.current.filters, recentQuery.current.reviewDate), loadedAccounts);
           if (active && recent === recentVersion.current) setExpenses(data);
         } catch (expensesLoadError) {
           if (!active || recent !== recentVersion.current) return;
@@ -562,7 +604,7 @@ export default function Home() {
         setExpensesError(message);
       } finally {
         if (active) {
-          setIsLoadingExpenses(false);
+          if (recent === recentVersion.current) setIsLoadingExpenses(false);
           setIsLoadingAccounts(false);
         }
       }
@@ -608,6 +650,10 @@ export default function Home() {
   }, [activeMenu, refreshRecentExpenses]);
 
   useEffect(() => {
+    if (expenseReviewDate && activeMenu === "transactions") reviewRecent.current?.focus();
+  }, [activeMenu, expenseReviewDate]);
+
+  useEffect(() => {
     if (activeMenu !== "accounts" || status !== "authenticated") return;
     let active = true;
     void (async () => {
@@ -627,89 +673,175 @@ export default function Home() {
     return () => { active = false; };
   }, [activeMenu, status, getAccessToken, fetchAccounts]);
 
-  const resetForm = () => {
-    setExpense(emptyExpense);
-    setIsEditingIndex(null);
+  const loadExpenseForm = (item: Expense) => {
+    setExpense(item);
+    setExpenseDraftDirty(false);
+    setConfirmExpenseDiscard(false);
+    setExpenseFormKey((key) => key + 1);
+    setExpenseSubmission("idle");
+    setExpenseSubmitError("");
+    setExpenseFieldErrors({});
+    setSavedExpense(null);
+  };
+
+  const applyRecentFilters = (filters: RecentExpenseFilters) => {
+    const previous = recentQuery.current.filters;
+    recentQuery.current.filters = filters;
+    setRecentFilters(filters);
+    if (filters.dateFrom !== previous.dateFrom || filters.dateTo !== previous.dateTo || expensesError) {
+      void refreshRecentExpenses();
+    }
+  };
+
+  const setRecentReviewDate = (date: string) => {
+    if (date !== recentQuery.current.reviewDate) setExpenses([]);
+    recentQuery.current.reviewDate = date;
+    setExpenseReviewDate(date);
+    void refreshRecentExpenses();
+  };
+
+  const closeExpenseForm = () => {
+    setExpenseFormOpen(false);
+    loadExpenseForm(createEmptyExpense());
+    if (expenseReviewDate) setRecentReviewDate("");
+  };
+
+  const openExpenseForm = (item: Expense) => {
+    if (expenseFormOpen || pendingExpense.current) return;
+    loadExpenseForm(item);
+    setExpenseFormOpen(true);
+  };
+
+  const requestExpenseClose = () => {
+    if (pendingExpense.current) return;
+    if (expenseDraftDirty) setConfirmExpenseDiscard(true);
+    else closeExpenseForm();
   };
 
   const isEditingExpense = Boolean(expense.expenseId);
+  const isSavingExpense = expenseSubmission === "saving" || expenseSubmission === "slow";
+  const expenseFormLocked = isSavingExpense || expenseSubmission === "uncertain";
 
-  const validateExpense = (item: Expense) => {
-    if (!item.date) return "Escolha a data da despesa.";
-    if (!item.description.trim() || item.description.trim().length < 3) return "Descrição precisa ter ao menos 3 caracteres.";
-    if (!(item.value > 0)) return "Valor precisa ser maior que zero.";
-    if (!item.accountId) return "Escolha uma conta.";
-    if (!Number.isInteger(item.installments) || item.installments < 1) return "Parcelas deve ser 1 ou maior.";
-    if (item.isPaid && !item.paidFromAccountId) return "Escolha a conta de pagamento.";
+  const validateExpense = (item: Expense): ExpenseFieldErrors => {
+    const errors: ExpenseFieldErrors = {};
+    if (!Number.isFinite(item.value) || item.value <= 0) errors.value = "Informe um valor maior que R$ 0,00, com até duas casas decimais.";
+    if (item.description.trim().length < 3) errors.description = "Informe uma descrição com ao menos 3 caracteres.";
+    if (!item.accountId) errors.accountId = "Escolha uma conta.";
+    if (!item.date) errors.date = "Escolha a data da despesa.";
 
-    const selectedAccount = activeAccounts.find((account) => account.accountId === item.accountId);
-    if (item.installments > 1 && selectedAccount?.accountType !== "CREDIT_CARD") {
-      return "Despesas parceladas so podem ser lancadas em cartao de credito.";
+    const selectedAccount = accounts.find((account) => account.accountId === item.accountId);
+    if (selectedAccount?.accountType === "CREDIT_CARD" && (!Number.isInteger(item.installments) || item.installments < 1)) {
+      errors.installments = "Informe um número inteiro de parcelas, a partir de 1.";
     }
-
-    return "";
+    if (selectedAccount?.accountType !== "CREDIT_CARD" && item.installments > 1) {
+      errors.accountId = "Escolha um cartão de crédito para manter o parcelamento.";
+    }
+    if (item.isPaid && !item.paidFromAccountId) errors.paidFromAccountId = "Escolha a conta de pagamento.";
+    return errors;
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setExpensesError("");
-    const error = validateExpense(expense);
-    if (error) {
-      alert(error);
+    if (!expenseFormOpen || confirmExpenseDiscard || pendingExpense.current || expenseSubmission === "uncertain") return;
+
+    const errors = validateExpense(expense);
+    setExpenseFieldErrors(errors);
+    setExpenseSubmitError("");
+    if (Object.keys(errors).length) {
+      setExpenseSubmission("idle");
+      const form = event.currentTarget;
+      window.requestAnimationFrame(() => {
+        form?.querySelector<HTMLElement>(`#expense-${Object.keys(errors)[0]}`)?.focus();
+      });
       return;
     }
 
-    setIsSubmittingExpense(true);
+    const controller = new AbortController();
+    pendingExpense.current = controller;
+    const session = sessionVersion.current;
+    const isCurrent = () => session === sessionVersion.current && pendingExpense.current === controller;
+    const slowTimer = window.setTimeout(() => {
+      if (isCurrent()) setExpenseSubmission("slow");
+    }, 4000);
+    let requestTimer: number | undefined;
+    let requestStarted = false;
+    setExpenseSubmission("saving");
+
     try {
       const accessToken = await getAccessToken();
-      const expenseId = expense.expenseId;
-      const isEditing = Boolean(expenseId);
-      const response = await fetch(isEditing ? `${expensesApiUrl}/${expenseId}` : expensesApiUrl, {
-        method: isEditing ? "PUT" : "POST",
+      if (!isCurrent()) return;
+      const { expenseId } = expense;
+      requestTimer = window.setTimeout(() => controller.abort(), 20000);
+      requestStarted = true;
+      const response = await fetch(expenseId ? `${expensesApiUrl}/${expenseId}` : expensesApiUrl, {
+        method: expenseId ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify(buildExpensePayload(expense)),
+        signal: controller.signal,
       });
 
+      if (!isCurrent()) return;
       if (!response.ok) {
-        throw new Error(await getApiErrorMessage(response, "Nao foi possivel salvar a despesa."));
+        if (response.status >= 500 || response.status === 408) {
+          setExpenseSubmission("uncertain");
+        } else {
+          const message = await getApiErrorMessage(response, "Não foi possível salvar a despesa.");
+          if (!isCurrent()) return;
+          setExpenseSubmitError(message);
+          setExpenseSubmission("error");
+        }
+        return;
       }
 
-      const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
-      setExpenses(data);
-      resetForm();
-    } catch (submitError) {
-      alert(submitError instanceof Error ? submitError.message : "Ocorreu um erro ao salvar a despesa.");
+      closeExpenseForm();
+      setSavedExpense(expense);
+      void refreshRecentExpenses(accessToken);
+    } catch {
+      if (!isCurrent()) return;
+      if (requestStarted) {
+        setExpenseSubmission("uncertain");
+      } else {
+        setExpenseSubmitError("Não foi possível acessar sua sessão para salvar a despesa.");
+        setExpenseSubmission("error");
+      }
     } finally {
-      setIsSubmittingExpense(false);
+      window.clearTimeout(slowTimer);
+      window.clearTimeout(requestTimer);
+      if (isCurrent()) pendingExpense.current = null;
     }
   };
 
   const handleEdit = (index: number) => {
+    if (expenseFormLocked || pendingExpense.current) return;
     const current = expenses[index];
-    setExpense(current);
-    setIsEditingIndex(index);
+    if (!current) return;
+    openExpenseForm(current);
     setActiveMenu("transactions");
   };
 
   const handleEditExpenseById = (expenseId: string) => {
+    if (expenseFormLocked || pendingExpense.current) {
+      setActiveMenu("transactions");
+      return;
+    }
     const currentExpense =
       expenseHistory.find((item) => item.expenseId === expenseId) ?? expenses.find((item) => item.expenseId === expenseId);
 
     if (!currentExpense) {
-      alert("Nao foi possivel localizar a despesa selecionada.");
+      alert("Não foi possível localizar a despesa selecionada.");
       return;
     }
 
-    setExpense(currentExpense);
-    setIsEditingIndex(null);
+    openExpenseForm(currentExpense);
     setActiveMenu("transactions");
   };
 
   const handleDelete = (index: number) => {
     const currentExpense = expenses[index];
+    if (expenseFormLocked || pendingExpense.current) return;
     if (!currentExpense?.expenseId) {
       alert("Nao foi possivel identificar a despesa para exclusao.");
       return;
@@ -717,6 +849,7 @@ export default function Home() {
 
     if (!window.confirm("Remover esta despesa?")) return;
 
+    const session = sessionVersion.current;
     void (async () => {
       setExpensesError("");
 
@@ -733,11 +866,10 @@ export default function Home() {
           throw new Error(await getApiErrorMessage(response, "Nao foi possivel remover a despesa."));
         }
 
-        const data = await fetchExpenses(accessToken, buildRecentExpensesUrl(), accounts);
-        setExpenses(data);
-        if (expense.expenseId === currentExpense.expenseId || isEditingIndex === index) {
-          resetForm();
-        }
+        if (session !== sessionVersion.current) return;
+        setExpenses((items) => items.filter((item) => item.expenseId !== currentExpense.expenseId));
+        if (expense.expenseId === currentExpense.expenseId && !pendingExpense.current) closeExpenseForm();
+        void refreshRecentExpenses(accessToken);
       } catch (deleteError) {
         alert(deleteError instanceof Error ? deleteError.message : "Ocorreu um erro ao remover a despesa.");
       }
@@ -775,6 +907,9 @@ export default function Home() {
   };
 
   const resetAccountForm = () => {
+    setAccountFormOpen(false);
+    setAccountDraftDirty(false);
+    setAccountSubmitError("");
     setAccount(emptyAccountForm);
     setEditingAccountId(null);
   };
@@ -796,8 +931,9 @@ export default function Home() {
       initialBalance: "",
     });
     setEditingAccountId(accountId);
+    setAccountDraftDirty(false);
+    setAccountFormOpen(true);
     setAccountSubmitError("");
-    setAccountSubmitSuccess("");
     setAccountListFeedbackError("");
     setAccountListFeedbackSuccess("");
   };
@@ -823,7 +959,6 @@ export default function Home() {
       setAccountListFeedbackError("");
       setAccountListFeedbackSuccess("");
       setAccountSubmitError("");
-      setAccountSubmitSuccess("");
 
       try {
         const accessToken = await getAccessToken();
@@ -868,8 +1003,8 @@ export default function Home() {
 
   const handleAccountSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!accountFormOpen || pendingAccountSave.current) return;
     setAccountSubmitError("");
-    setAccountSubmitSuccess("");
     setAccountListFeedbackError("");
     setAccountListFeedbackSuccess("");
 
@@ -879,10 +1014,13 @@ export default function Home() {
       return;
     }
 
+    pendingAccountSave.current = true;
     setIsSubmittingAccount(true);
+    const session = sessionVersion.current;
 
     try {
       const accessToken = await getAccessToken();
+      if (session !== sessionVersion.current) return;
       const isEditingAccount = Boolean(editingAccountId);
 
       const response = await fetch(isEditingAccount ? `${accountsApiUrl}/${editingAccountId}` : accountsApiUrl, {
@@ -898,29 +1036,35 @@ export default function Home() {
         throw new Error(await getApiErrorMessage(response, "Nao foi possivel salvar a conta."));
       }
 
+      if (session !== sessionVersion.current) return;
       resetAccountForm();
-      setAccountSubmitSuccess(isEditingAccount ? "Conta atualizada com sucesso." : "Conta salva com sucesso.");
-      try {
-        await fetchAccounts(accessToken);
-      } catch {
-        setAccountsError("Conta salva, mas não foi possível atualizar a lista. Recarregue a página para consultar os dados atuais.");
-      }
+      setAccountListFeedbackSuccess(isEditingAccount ? "Conta atualizada com sucesso." : "Conta salva com sucesso.");
+      void fetchAccounts(accessToken).catch(() => {
+        // fetchAccounts publishes loading errors for the current request.
+      });
     } catch (submitError) {
+      if (session !== sessionVersion.current) return;
       setAccountSubmitError(
         submitError instanceof Error ? submitError.message : "Ocorreu um erro ao salvar a conta.",
       );
     } finally {
-      setIsSubmittingAccount(false);
-      setIsLoadingAccounts(false);
+      if (session === sessionVersion.current) {
+        pendingAccountSave.current = false;
+        setIsSubmittingAccount(false);
+      }
     }
   };
 
-  const userName =
-    profile?.firstName ||
-    profile?.username ||
-    tokenParsed?.preferred_username ||
-    tokenParsed?.name ||
-    "usuário";
+  async function retryDashboardAccounts() {
+    setIsLoadingAccounts(true);
+    try {
+      await fetchAccounts(await getAccessToken());
+    } catch {
+      setAccountsError("Não foi possível carregar as contas.");
+    } finally {
+      setIsLoadingAccounts(false);
+    }
+  }
 
   if (status !== "authenticated") {
     return (
@@ -936,19 +1080,42 @@ export default function Home() {
 
     if (activeMenu === "transactions") {
       return (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <h2 className="mb-4 text-2xl font-bold">{isEditingExpense ? "Editar despesa" : "Cadastrar despesa"}</h2>
-          <ExpenseForm
-            expense={expense}
-            setExpense={setExpense}
-            isEditing={isEditingExpense}
-            isSubmitting={isSubmittingExpense}
-            accounts={activeAccounts}
-            isLoadingAccounts={isLoadingAccounts}
-            accountsError={accountsError}
-            onSubmit={handleSubmit}
-            onCancel={resetForm}
-          />
+        <div className="space-y-6">
+          {expenseFormOpen && (
+            <ExpenseModal
+              open={!expenseReviewDate}
+              title={isEditingExpense ? "Editar despesa" : "Nova despesa"}
+              saving={isSavingExpense}
+              confirmDiscard={confirmExpenseDiscard}
+              onRequestDismiss={requestExpenseClose}
+              onContinueEditing={() => setConfirmExpenseDiscard(false)}
+              onDismiss={closeExpenseForm}
+            >
+              <ExpenseForm
+                key={expenseFormKey}
+                expense={expense}
+                setExpense={(updatedExpense) => {
+                  setExpense(updatedExpense);
+                  setExpenseDraftDirty(true);
+                  setExpenseFieldErrors((errors) => Object.fromEntries(
+                    Object.entries(errors).filter(([field]) => Object.is(expense[field as keyof ExpenseFieldErrors], updatedExpense[field as keyof ExpenseFieldErrors])),
+                  ));
+                }}
+                isEditing={isEditingExpense}
+                submission={expenseSubmission}
+                submitError={expenseSubmitError}
+                fieldErrors={expenseFieldErrors}
+                accounts={isEditingExpense ? accounts : activeAccounts}
+                isLoadingAccounts={isLoadingAccounts}
+                accountsError={accountsError}
+                onSubmit={handleSubmit}
+                onCancel={requestExpenseClose}
+                reviewByDate
+                onReviewRecent={() => setRecentReviewDate(expense.date)}
+                onResume={() => setExpenseSubmission("idle")}
+              />
+            </ExpenseModal>
+          )}
           {reversalFeedback}
           <ExpenseList
             {...paymentProps}
@@ -957,6 +1124,27 @@ export default function Home() {
             error={expensesError}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            editDisabled={expenseFormLocked}
+            headingRef={reviewRecent}
+            reviewDate={expenseReviewDate}
+            accounts={accounts}
+            filters={recentFilters}
+            defaultPeriod={defaultRecentPeriod()}
+            onApplyFilters={applyRecentFilters}
+            onRetry={() => void refreshRecentExpenses()}
+            onNewExpense={() => openExpenseForm(createEmptyExpense())}
+            onViewHistory={() => setActiveMenu("expenseHistory")}
+            onReturnToDraft={expenseFormOpen ? () => setRecentReviewDate("") : undefined}
+            feedback={(
+              <div role="status" className="rounded-lg bg-green-50 p-3 text-sm text-green-900 empty:hidden dark:bg-green-950 dark:text-green-100">
+                {savedExpense && (
+                  <>
+                    <p className="font-semibold">{savedExpense.expenseId ? "Despesa atualizada" : "Despesa salva"}</p>
+                    <p className="break-words">{savedExpense.description} · {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(savedExpense.value)}</p>
+                  </>
+                )}
+              </div>
+            )}
             {...reversalProps}
           />
         </div>
@@ -965,7 +1153,10 @@ export default function Home() {
 
     if (activeMenu === "expenseHistory") {
       return (
-        <div>
+        <div className="space-y-4">
+          <button type="button" onClick={() => setActiveMenu("transactions")} className="min-h-11 text-sm font-semibold text-blue-800 hover:underline dark:text-blue-200">
+            Voltar para despesas recentes
+          </button>
           {reversalFeedback}
           <ExpenseHistoryTable
             {...paymentProps}
@@ -978,15 +1169,6 @@ export default function Home() {
             onEdit={handleEditExpenseById}
             {...reversalProps}
           />
-        </div>
-      );
-    }
-
-    if (activeMenu === "reports") {
-      return (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <h2 className="text-2xl font-bold">Relatórios</h2>
-          <p className="mt-2 text-slate-600 dark:text-slate-300">Em breve teremos dados de relatórios aqui.</p>
         </div>
       );
     }
@@ -1006,18 +1188,18 @@ export default function Home() {
 
     if (activeMenu === "accounts") {
       return (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-          <h2 className="mb-4 text-2xl font-bold">{isEditingAccount ? "Editar conta" : "Cadastrar conta"}</h2>
-          <AccountForm
-            account={account}
-            setAccount={setAccount}
-            isEditing={isEditingAccount}
-            isSubmitting={isSubmittingAccount}
-            submitError={accountSubmitError}
-            submitSuccess={accountSubmitSuccess}
-            onSubmit={handleAccountSubmit}
-            onCancelEdit={resetAccountForm}
-          />
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6 dark:border-slate-700 dark:bg-slate-900">
+          {accountFormOpen && <RecordFormModal title={isEditingAccount ? "Editar conta" : "Nova conta"} dirty={accountDraftDirty} saving={isSubmittingAccount} onDismiss={resetAccountForm}>
+            {(cancel) => <AccountForm
+              account={account}
+              setAccount={(values) => { setAccount(values); setAccountDraftDirty(true); }}
+              isEditing={isEditingAccount}
+              isSubmitting={isSubmittingAccount}
+              submitError={accountSubmitError}
+              onSubmit={handleAccountSubmit}
+              onCancelEdit={cancel}
+            />}
+          </RecordFormModal>}
           <AccountList key={paymentDataVersion}
             getAccessToken={getAccessToken}
             accounts={accounts}
@@ -1026,6 +1208,15 @@ export default function Home() {
             success={accountListFeedbackSuccess}
             updatingAccountStatusId={updatingAccountStatusId}
             editingAccountId={editingAccountId}
+            onCreate={() => {
+              resetAccountForm();
+              setAccountListFeedbackSuccess("");
+              setAccountFormOpen(true);
+            }}
+            onRetry={() => {
+              setAccountListFeedbackError("");
+              void retryDashboardAccounts();
+            }}
             onEdit={handleEditAccount}
             onToggleStatus={handleToggleAccountStatus}
             loadAccounts={fetchAccounts}
@@ -1035,18 +1226,20 @@ export default function Home() {
     }
 
     return (
-      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <h2 className="text-2xl font-bold">Bem-vindo ao seu painel, {userName}</h2>
-        <p className="mt-2 text-slate-600 dark:text-slate-300">
-          Sua sessao com Keycloak esta ativa. O menu lateral continua responsivo, com botao de toggle para esconder e exibir em telas pequenas.
-        </p>
-      </div>
+      <Dashboard
+        accounts={accounts}
+        accountsLoading={isLoadingAccounts}
+        accountsError={accountsError}
+        getAccessToken={getAccessToken}
+        onViewAccounts={() => setActiveMenu("accounts")}
+        onRetryAccounts={() => void retryDashboardAccounts()}
+      />
     );
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto flex max-w-screen-xl">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <div className="mx-auto flex min-h-screen max-w-screen-2xl">
         <Sidebar
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
@@ -1054,7 +1247,7 @@ export default function Home() {
           setSidebarOpen={setSidebarOpen}
         />
 
-        <div className="flex flex-1 flex-col sm:ml-64">
+        <div className="flex min-w-0 flex-1 flex-col">
           <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} activeMenu={activeMenu} />
 
           <main className="p-4 sm:p-6">{payment.message && <div role="status" className="mb-4 rounded-md border p-3">

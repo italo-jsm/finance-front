@@ -58,7 +58,7 @@ export function IncomeForm({ values, accounts, sources, editing, disabled, submi
       {error && <p role="alert" className="text-red-700 dark:text-red-300">{error}</p>}
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={disabled} className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-60">{submitting ? 'Salvando...' : editing ? 'Salvar alterações' : 'Salvar recebimento'}</button>
-        {editing && <button type="button" disabled={submitting} onClick={onCancel} className="rounded-lg border border-slate-300 px-4 py-2 dark:border-slate-700 disabled:opacity-60">Cancelar edição</button>}
+        <button type="button" disabled={submitting} onClick={onCancel} className="rounded-lg border border-slate-300 px-4 py-2 dark:border-slate-700 disabled:opacity-60">Cancelar</button>
       </div>
     </form>
   );
