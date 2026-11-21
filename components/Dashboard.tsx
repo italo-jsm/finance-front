@@ -119,6 +119,8 @@ export function Dashboard({ accounts, accountsLoading, accountsError, getAccessT
       a.card.name.localeCompare(b.card.name, "pt-BR"));
   const loaded = orderedCards.flatMap(item => item.invoice ? [item.invoice] : []);
   const missingInvoices = invoices !== null && loaded.length < cards.length;
+  const invoicesLoading = accountsLoading || (cards.length > 0 && invoices === null);
+  const invoiceTotalsUnavailable = accountsError || (missingInvoices && loaded.length === 0);
   const firstDue = loaded.find(invoice => invoice.total.currentTotal > 0)?.dueDate;
   const balances = checking.flatMap(account => typeof account.balance === "number" ? [account.balance] : []);
   const completeBalance = !accountsError && balances.length === checking.length;
@@ -186,14 +188,30 @@ export function Dashboard({ accounts, accountsLoading, accountsError, getAccessT
           <div className="min-w-0">
             <h4 id="invoice-total" className={`text-sm font-semibold ${muted}`}>{missingInvoices && loaded.length > 0 ? "Total parcial das faturas" : "Total das faturas do mês"}</h4>
             <p className="mt-1 break-words text-3xl font-bold tabular-nums" aria-live="polite">
-              {accountsError ? "Indisponível" : accountsLoading || (cards.length > 0 && invoices === null) ? "…" :
-                missingInvoices && !loaded.length ? "Indisponível" : currency.format(sumMoney(loaded.map(invoice => invoice.total.currentTotal)))}
+              {invoiceTotalsUnavailable ? "Indisponível" : invoicesLoading ? "…" :
+                currency.format(sumMoney(loaded.map(invoice => invoice.total.currentTotal)))}
             </p>
           </div>
           <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"><Icon kind="card" /></span>
         </div>
+        {!invoiceTotalsUnavailable && !invoicesLoading && (
+          <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-200 pt-2 dark:border-slate-700">
+            <div className="min-w-0">
+              <dt className={`text-xs ${muted}`}>Compras à vista</dt>
+              <dd className="break-words text-sm font-semibold tabular-nums">
+                {currency.format(sumMoney(loaded.map(invoice => invoice.totalSingle.currentTotal)))}
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className={`text-xs ${muted}`}>Compras parceladas</dt>
+              <dd className="break-words text-sm font-semibold tabular-nums">
+                {currency.format(sumMoney(loaded.map(invoice => invoice.totalInstallments.currentTotal)))}
+              </dd>
+            </div>
+          </dl>
+        )}
         <p className={`mt-auto pt-3 text-sm ${muted}`}>
-          {accountsError ? "Não foi possível consultar seus cartões." : accountsLoading || (cards.length > 0 && invoices === null) ? "Carregando faturas…" :
+          {accountsError ? "Não foi possível consultar seus cartões." : invoicesLoading ? "Carregando faturas…" :
             missingInvoices ? `${loaded.length} de ${cards.length} faturas carregadas` :
             `${cards.length} ${cards.length === 1 ? "cartão" : "cartões"}${firstDue ? ` · primeiro vencimento em ${shortDate(firstDue)}` : ""}`}
         </p>
