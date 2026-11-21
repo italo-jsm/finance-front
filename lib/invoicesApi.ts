@@ -10,6 +10,8 @@ type ExpenseTotal = { currentTotal: number };
 
 export type Invoice = {
   dueDate: string;
+  paid?: boolean;
+  payment?: { amount: number; paymentDate: string } | null;
   total: ExpenseTotal;
   totalSingle: ExpenseTotal;
   totalInstallments: ExpenseTotal;

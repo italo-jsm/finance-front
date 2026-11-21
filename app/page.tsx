@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useExpenseReversal } from "@/hooks/useExpenseReversal";
 import { useAuth } from "@/components/AuthProvider";
 import { AuthScreen } from "@/components/AuthScreen";
+import { DueDatesSection } from "@/components/DueDatesSection";
 import { Dashboard } from "@/components/Dashboard";
 import { IncomesSection } from "@/components/IncomesSection";
 import { IncomeSourcesSection } from "@/components/IncomeSourcesSection";
@@ -1185,6 +1186,16 @@ export default function Home() {
     }
 
     if (activeMenu === "incomeSources") return <IncomeSourcesSection />;
+
+    if (activeMenu === "dueDates") {
+      return <DueDatesSection
+        accounts={accounts}
+        accountsLoading={isLoadingAccounts}
+        accountsError={accountsError}
+        getAccessToken={getAccessToken}
+        onRetryAccounts={() => void retryDashboardAccounts()}
+      />;
+    }
 
     if (activeMenu === "accounts") {
       return (

@@ -13,6 +13,7 @@ export function Sidebar({ activeMenu, setActiveMenu, sidebarOpen, setSidebarOpen
   const items: Array<{ key: MenuItem; label: string }> = [
     { key: "transactions", label: "Despesas" },
     { key: "overview", label: "Visão geral" },
+    { key: "dueDates", label: "Vencimentos" },
     { key: "accounts", label: "Contas" },
     { key: "incomeSources", label: "Fontes de renda" },
     { key: "incomes", label: "Recebimentos" },

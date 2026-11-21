@@ -11,6 +11,7 @@ type HeaderProps = {
 
 const pageTitles: Record<MenuItem, string> = {
   overview: "Visão geral",
+  dueDates: "Vencimentos",
   transactions: "Despesas",
   expenseHistory: "Histórico de Despesas",
   accounts: "Contas",
