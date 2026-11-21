@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 
 type FilterField = {
   name: string;
@@ -14,6 +14,7 @@ type Props<T extends Record<string, string>> = {
   createLabel: string;
   onCreate: () => void;
   disabled?: boolean;
+  actions?: ReactNode;
   fields: FilterField[];
   filters: T;
   defaults: T;
@@ -23,7 +24,7 @@ type Props<T extends Record<string, string>> = {
 const secondary = "min-h-11 rounded-lg border border-slate-400 px-3 text-sm font-semibold text-blue-800 hover:bg-slate-100 dark:text-blue-200 dark:hover:bg-slate-800";
 const primary = "min-h-11 rounded-lg bg-blue-700 px-4 font-semibold text-white hover:bg-blue-800 disabled:opacity-60";
 
-export function ListToolbar<T extends Record<string, string>>({ title, createLabel, onCreate, disabled, fields, filters, defaults, onApply }: Props<T>) {
+export function ListToolbar<T extends Record<string, string>>({ title, createLabel, onCreate, disabled, actions, fields, filters, defaults, onApply }: Props<T>) {
   const titleId = useId();
   const dialog = useRef<HTMLDialogElement>(null);
   const [draft, setDraft] = useState(filters);
@@ -35,6 +36,7 @@ export function ListToolbar<T extends Record<string, string>>({ title, createLab
         <button type="button" disabled={disabled} onClick={() => { setDraft(filters); dialog.current?.showModal(); }} className={`${secondary} disabled:opacity-60`}>
           Filtros{active.length > 0 && ` (${active.length})`}
         </button>
+        {actions}
         <button type="button" disabled={disabled} onClick={onCreate} className={primary}><span aria-hidden="true">+ </span>{createLabel}</button>
       </div>
     </header>

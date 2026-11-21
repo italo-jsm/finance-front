@@ -1213,6 +1213,13 @@ export default function Home() {
               setAccountListFeedbackSuccess("");
               setAccountFormOpen(true);
             }}
+            onTransferred={(token) => {
+              setAccountListFeedbackError("");
+              setAccountListFeedbackSuccess("Transferência realizada.");
+              void fetchAccounts(token).catch(() => {
+                // fetchAccounts publishes loading errors for the current request.
+              });
+            }}
             onRetry={() => {
               setAccountListFeedbackError("");
               void retryDashboardAccounts();

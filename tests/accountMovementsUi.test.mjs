@@ -35,6 +35,16 @@ test('saldo inicial zero/negativo e recebimento positivo preservam sinais', () =
     if (amount > 0) assert.match(html, /\+/);
   }
 });
+test('transferências mostram saída na origem e entrada no destino', () => {
+  for (const [amount, label, sign] of [
+    [-200, 'Transferência enviada', '−'],
+    [200, 'Transferência recebida', '+'],
+  ]) {
+    const html = markup({ movements: [{ ...movement, origin: 'TRANSFER', amount }] });
+    assert.ok(html.includes(label));
+    assert.ok(html.includes(`>${sign}R$`));
+  }
+});
 test('vazio, carregamento e erro parcial são distintos sem saldo zero fictício', () => {
   assert.match(markup({ movements: [] }), /Nenhuma movimentação encontrada/);
   const loading = markup({ loading: true, account: null, movements: [] });

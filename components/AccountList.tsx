@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AccountTransferModal } from "./AccountTransferModal";
 import { ListToolbar } from "./ListToolbar";
 import { FormModal } from "./FormModal";
 import { AccountMovementsSection } from "./AccountMovementsSection";
@@ -15,6 +16,7 @@ type AccountListProps = {
   updatingAccountStatusId: string | null;
   editingAccountId: string | null;
   onCreate?: () => void;
+  onTransferred?: (token: string) => void;
   onRetry?: () => void;
   onEdit: (accountId: string) => void;
   onToggleStatus: (accountId: string) => void;
@@ -59,12 +61,15 @@ export function AccountList({
   updatingAccountStatusId,
   editingAccountId,
   onCreate,
+  onTransferred,
   onRetry,
   onEdit,
   onToggleStatus,
   loadAccounts,
 }: AccountListProps) {
   const [selectedAccount, setSelectedAccount] = useState<AccountSummary | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const transferAccounts = accounts.filter(account => account.accountType === "CHECKING_ACCOUNT" && account.active !== false);
   const [filters, setFilters] = useState(accountFilters);
   const visibleAccounts = accounts.filter((account) =>
     account.name.toLocaleLowerCase("pt-BR").includes(filters.name.trim().toLocaleLowerCase("pt-BR")) &&
@@ -76,7 +81,24 @@ export function AccountList({
   return (
     <section className="space-y-4">
       {onCreate && <ListToolbar title="Contas" createLabel="Nova conta" onCreate={onCreate} disabled={Boolean(updatingAccountStatusId)}
+        actions={onTransferred && <button type="button" onClick={() => setTransferOpen(true)}
+          disabled={isLoading || Boolean(updatingAccountStatusId) || transferAccounts.length < 2}
+          aria-describedby={!isLoading && transferAccounts.length < 2 && !error ? "transfer-unavailable" : undefined}
+          className="min-h-11 rounded-lg border border-slate-400 px-3 text-sm font-semibold text-blue-800 hover:bg-slate-100 disabled:opacity-60 dark:text-blue-200 dark:hover:bg-slate-800">
+          Transferir entre contas
+        </button>}
         fields={fields} filters={filters} defaults={accountFilters} onApply={setFilters} />}
+
+      {onTransferred && !isLoading && !error && transferAccounts.length < 2 && (
+        <p id="transfer-unavailable" className="text-sm text-slate-600 dark:text-slate-300">
+          Você precisa de duas contas correntes ativas para transferir.
+        </p>
+      )}
+      {transferOpen && onTransferred && <AccountTransferModal accounts={transferAccounts} getAccessToken={getAccessToken}
+        onDismiss={() => setTransferOpen(false)} onTransferred={token => {
+          setTransferOpen(false);
+          onTransferred(token);
+        }} />}
 
       {error ? (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
