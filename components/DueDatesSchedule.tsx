@@ -76,7 +76,7 @@ export function DueDatesSchedule({
           return;
         }
         setError("");
-        if (draft.start !== period.start || draft.end !== period.end) onPeriodChange(draft);
+        onPeriodChange(draft);
       }}>
         <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-medium @min-[650px]:max-w-48">Data inicial
           <input required type="date" min="0001-01-01" max="9999-12-31" className={control} value={draft.start} aria-invalid={!!error} aria-describedby={error ? "date-error" : undefined} onChange={event => setDraft({ ...draft, start: event.target.value })} />
@@ -84,13 +84,13 @@ export function DueDatesSchedule({
         <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-medium @min-[650px]:max-w-48">Data final
           <input required type="date" min="0001-01-01" max="9999-12-31" className={control} value={draft.end} aria-invalid={!!error} aria-describedby={error ? "date-error" : undefined} onChange={event => setDraft({ ...draft, end: event.target.value })} />
         </label>
-        <button className="min-h-11 w-full rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 @min-[650px]:w-auto">Aplicar período</button>
+        <button type="submit" className="min-h-11 w-full rounded-lg bg-blue-700 px-4 text-sm font-semibold text-white hover:bg-blue-800 @min-[650px]:w-auto">Aplicar período</button>
         {error && <p id="date-error" role="alert" className="w-full text-sm text-red-800 dark:text-red-300">{error}</p>}
       </form>
 
       {(loading || loadError) && <div className={`mt-5 p-5 ${panel}`}>
-        <p role={loadError ? "alert" : "status"} className="text-sm">{loadError || "Carregando vencimentos…"}</p>
-        {loadError && onRetry && <button type="button" onClick={onRetry} className="mt-2 min-h-11 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-800">Tentar novamente</button>}
+        <p role={loading ? "status" : "alert"} className="text-sm">{loading ? "Carregando vencimentos…" : loadError}</p>
+        {!loading && loadError && onRetry && <button type="button" onClick={onRetry} className="mt-2 min-h-11 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-800">Tentar novamente</button>}
       </div>}
       {!loading && !loadError && <>
         <section aria-label="Resumo do período" className="my-5 grid gap-3 @min-[650px]:grid-cols-3" aria-live="polite">

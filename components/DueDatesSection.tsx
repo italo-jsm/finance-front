@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { DueDatesSchedule } from "./DueDatesSchedule";
 import { useDueItems } from "@/hooks/useDueItems";
-import { getCurrentDuePeriod } from "@/lib/dueDatesApi";
+import { getCurrentDuePeriod, type DuePeriod } from "@/lib/dueDatesApi";
 import { getLocalDate } from "@/lib/incomeForm";
 import type { AccountSummary } from "@/types/account";
 
@@ -23,12 +23,17 @@ export function DueDatesSection({
   const error = accountsError ? "Não foi possível carregar as contas para consultar os vencimentos." :
     result?.error ? "Não foi possível carregar todos os vencimentos do período." : "";
 
+  function applyPeriod(nextPeriod: DuePeriod) {
+    setPeriod({ ...nextPeriod });
+    if (accountsError && !accountsLoading) onRetryAccounts();
+  }
+
   return (
     <DueDatesSchedule
       items={result?.items ?? []}
       today={getLocalDate()}
       period={period}
-      onPeriodChange={setPeriod}
+      onPeriodChange={applyPeriod}
       loading={accountsLoading || (!error && !result)}
       loadError={error}
       onRetry={accountsError ? onRetryAccounts : retry}
