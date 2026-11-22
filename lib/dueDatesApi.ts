@@ -13,6 +13,7 @@ export type DueItem = {
   due: string;
   amount: number;
   paid: number;
+  paymentTarget?: { type: "fixed"; expenseId: string } | { type: "card"; accountId: string; competence: string };
 };
 
 type FixedExpense = {
@@ -21,6 +22,7 @@ type FixedExpense = {
   accountId: string;
   amount: number;
   totalPaid?: number;
+  canPay?: boolean;
   paymentStatus?: Expense["paymentStatus"];
   payment?: Expense["payment"];
   reversedDate?: string | null;
@@ -90,7 +92,9 @@ export async function loadDueItems(
         const paid = expense.paymentStatus === "PAID" ? amount :
           Math.min(amount, Math.max(0, toCents(expense.totalPaid ?? expense.payment?.amount ?? 0)));
         return [{ id: expense.id, name: expense.description || account.name, accountName: account.name,
-          type: "fixed", due: account.due, amount, paid }];
+          type: "fixed", due: account.due, amount, paid,
+          ...(expense.canPay === true && paid < amount ? { paymentTarget: { type: "fixed", expenseId: expense.id } } : {}),
+        }];
       });
     });
 
@@ -99,13 +103,16 @@ export async function loadDueItems(
         const invoice = await getInvoice(card.accountId, month, token, signal);
         const amount = toCents(invoice.total.currentTotal);
         if (!contains(invoice.dueDate) || amount <= 0) return [];
-        return [{ id: `${card.accountId}:${month}`, name: card.name, type: "card",
-          due: invoice.dueDate, amount, paid: invoice.paid || invoice.payment ? amount : 0 }];
+        const paid = invoice.paid || invoice.payment ? amount : 0;
+        return [{ id: `${card.accountId}:${month}`, name: card.name, type: "card", due: invoice.dueDate, amount, paid,
+          ...(paid === 0 ? { paymentTarget: { type: "card", accountId: card.accountId, competence: month } } : {}),
+        }];
       });
     }
   }
 
   const items: DueItem[] = [];
+  console.info("[Vencimentos] Requisições ao Finance planejadas", { requests: jobs.length });
   let next = 0;
   let failed = false;
   // Limit concurrent requests when the period crosses several months.

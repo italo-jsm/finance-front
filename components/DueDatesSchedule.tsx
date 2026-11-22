@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import type { DueItem as Item, DuePeriod } from "@/lib/dueDatesApi";
 
@@ -46,10 +46,12 @@ type ScheduleProps = {
   loading?: boolean;
   loadError?: string;
   onRetry?: () => void;
+  paymentNotice?: { text: string; error?: boolean } | null;
+  renderPayment?: (item: Item) => ReactNode;
 };
 
 export function DueDatesSchedule({
-  items, today, period, onPeriodChange, loading = false, loadError, onRetry,
+  items, today, period, onPeriodChange, loading = false, loadError, onRetry, paymentNotice, renderPayment,
 }: ScheduleProps) {
   const [draft, setDraft] = useState(period);
   const [type, setType] = useState("all");
@@ -76,6 +78,7 @@ export function DueDatesSchedule({
           return;
         }
         setError("");
+        console.info("[Vencimentos] Aplicando filtro de período", { start: draft.start, end: draft.end });
         onPeriodChange(draft);
       }}>
         <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-medium @min-[650px]:max-w-48">Data inicial
@@ -88,6 +91,10 @@ export function DueDatesSchedule({
         {error && <p id="date-error" role="alert" className="w-full text-sm text-red-800 dark:text-red-300">{error}</p>}
       </form>
 
+      {paymentNotice && <p role={paymentNotice.error ? "alert" : "status"}
+        className={`mt-4 text-sm font-semibold ${paymentNotice.error ? "text-red-700 dark:text-red-300" : "text-emerald-700 dark:text-emerald-300"}`}>
+        {paymentNotice.text}
+      </p>}
       {(loading || loadError) && <div className={`mt-5 p-5 ${panel}`}>
         <p role={loading ? "status" : "alert"} className="text-sm">{loading ? "Carregando vencimentos…" : loadError}</p>
         {!loading && loadError && onRetry && <button type="button" onClick={onRetry} className="mt-2 min-h-11 rounded-lg px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 dark:text-blue-300 dark:hover:bg-slate-800">Tentar novamente</button>}
@@ -160,6 +167,9 @@ export function DueDatesSchedule({
                       {[["Vencimento", fullDate(item.due)], ["Valor total", money(item.amount)], ["Valor pago", money(item.paid)], ["Saldo em aberto", money(outstanding(item))]].map(([label, value]) =>
                         <div key={label}><dt className="text-xs text-slate-600 dark:text-slate-300">{label}</dt><dd className="mt-1 font-semibold tabular-nums">{value}</dd></div>)}
                     </dl>
+                    {item.paymentTarget && renderPayment && <div className="border-t border-slate-100 px-4 py-3 dark:border-slate-700 @min-[650px]:px-5">
+                      {renderPayment(item)}
+                    </div>}
                   </details>
                 </li>)}
               </ul>

@@ -9,7 +9,7 @@ export function AuthScreen({ failed = false, onRetry }: AuthScreenProps) {
   return (
     <main className="flex min-h-svh items-center justify-center bg-white px-6 py-10 text-neutral-950">
       <div className="w-full max-w-[352px] text-center">
-        <Image src="/im-logo.svg" alt="IM — Italo Mariano" width={128} height={84} priority className="mx-auto" />
+        <Image src="/im-logo.svg" alt="IM — Italo Mariano" width={128} height={83} priority className="mx-auto h-auto" />
         <p role={failed ? "alert" : "status"} className="mt-10 text-sm leading-6 text-neutral-600">
           {failed ? "Não foi possível abrir o login. Tente novamente." : "Conectando…"}
         </p>

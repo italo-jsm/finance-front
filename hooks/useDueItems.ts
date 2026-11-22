@@ -13,16 +13,23 @@ export function useDueItems(
     [accounts, period, enabled, getAccessToken, attempt]);
 
   useEffect(() => {
-    if (!request.enabled) return;
+    if (!request.enabled) {
+      console.info("[Vencimentos] Consulta aguardando contas carregadas sem erro");
+      return;
+    }
     const controller = new AbortController();
     void (async () => {
       try {
         const token = await request.getAccessToken();
         if (controller.signal.aborted) return;
         const items = await loadDueItems(request.accounts, request.period, token, controller.signal);
-        if (!controller.signal.aborted) setResult({ request, items, error: false });
-      } catch {
         if (!controller.signal.aborted) {
+          console.info("[Vencimentos] Consulta concluída", { items: items.length });
+          setResult({ request, items, error: false });
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("[Vencimentos] Falha ao consultar vencimentos", error);
           controller.abort();
           setResult({ request, items: [], error: true });
         }

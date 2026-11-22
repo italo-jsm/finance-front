@@ -11,6 +11,7 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
 ).outputText, filename);
 
 const { getCurrentDuePeriod, loadDueItems } = require('../lib/dueDatesApi.ts');
+const { payInvoice } = require('../lib/invoicesApi.ts');
 
 test('mês inicial inclui o último dia do calendário, inclusive em ano bissexto', () => {
   assert.deepEqual(getCurrentDuePeriod('2028-02-03'), { start: '2028-02-01', end: '2028-02-29' });
@@ -51,6 +52,34 @@ test('combina faturas e cobranças pelas datas de vencimento e calcula pagamento
     { id: 'cartao:2028-03', name: 'Cartão', type: 'card', due: '2028-03-02', amount: 5109, paid: 5109 },
   ]);
   assert.deepEqual(queries.sort(), ['2028-02', '2028-03']);
+});
+
+test('mantém a competência original da fatura e o ID da despesa para registrar pagamentos', async t => {
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    const { pathname } = new URL(url);
+    if (init.method === 'POST') {
+      assert.equal(pathname, '/invoices/cartao/2028-03/pay');
+      assert.equal(init.headers.Authorization, 'Bearer token');
+      assert.deepEqual(JSON.parse(init.body), { paidFromAccountId: 'corrente', paymentDate: '2028-02-29' });
+      return Response.json({});
+    }
+    if (pathname === '/invoices') {
+      return Response.json({ dueDate: '2028-03-02', total: { currentTotal: 50 } });
+    }
+    assert.equal(pathname, '/expenses/by-competence');
+    return Response.json({ installmentExpenses: [
+      { id: 'parcela', accountId: 'conta-fixa', amount: 20, canPay: true },
+      { id: 'parcial', accountId: 'conta-fixa', amount: 30, totalPaid: 10, canPay: false },
+    ], singleExpenses: [] });
+  });
+  const items = await loadDueItems([
+    { accountId: 'cartao', name: 'Cartão', accountType: 'CREDIT_CARD' },
+    { accountId: 'conta-fixa', name: 'Internet', accountType: 'FIXED_BILL', dueDay: 2 },
+  ], { start: '2028-03-01', end: '2028-03-31' }, 'token', new AbortController().signal);
+  assert.deepEqual(items.find(item => item.id === 'parcela').paymentTarget, { type: 'fixed', expenseId: 'parcela' });
+  assert.equal(items.find(item => item.id === 'parcial').paymentTarget, undefined);
+  const target = items.find(item => item.type === 'card').paymentTarget;
+  await payInvoice(target.accountId, target.competence, { paidFromAccountId: 'corrente', paymentDate: '2028-02-29', paymentMethod: '' }, 'token');
 });
 
 test('falha de consulta não produz totais parciais', async t => {

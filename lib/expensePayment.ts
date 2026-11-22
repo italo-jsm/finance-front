@@ -23,10 +23,11 @@ export function expensePaymentFields(item: Omit<Partial<Expense>, 'paidFromAccou
 export function canPayExpense(expense: Expense) {
   return Boolean(expense.expenseId && expense.canPay === true && !expense.reversedDate);
 }
-export function validateExpensePayment(payload: ExpensePaymentPayload, accounts: AccountSummary[]) {
+export function validateExpensePayment(payload: ExpensePaymentPayload, accounts: AccountSummary[], invoice = false) {
   if (!accounts.some(a => a.accountId === payload.paidFromAccountId && a.accountType === 'CHECKING_ACCOUNT' && a.active !== false)) return 'Escolha uma conta corrente ativa.';
   const date = new Date(`${payload.paymentDate}T12:00:00Z`);
   if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(payload.paymentDate) || payload.paymentDate.startsWith('0000') || Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== payload.paymentDate) return 'Informe uma data de pagamento válida.';
-  if (!Object.hasOwn(paymentMethods, payload.paymentMethod)) return 'Escolha a forma de pagamento.';
+  if (invoice && payload.paymentDate > localToday()) return 'Informe uma data de pagamento até hoje.';
+  if (!invoice && !Object.hasOwn(paymentMethods, payload.paymentMethod)) return 'Escolha a forma de pagamento.';
   return '';
 }

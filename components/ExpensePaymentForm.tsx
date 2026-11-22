@@ -3,8 +3,8 @@ import { useState, type FormEvent } from 'react';
 import type { Expense } from '../types/expense';
 import type { AccountSummary } from '../types/account';
 import { localToday, paymentMethods, validateExpensePayment, type ExpensePaymentPayload } from '../lib/expensePayment';
-export function ExpensePaymentForm({ expense, accounts, busy, error, onSubmit, onCancel }: {
-  expense: Expense; accounts: AccountSummary[]; busy: boolean; error: string;
+export function ExpensePaymentForm({ expense, accounts, busy, error, onSubmit, onCancel, invoice = false }: {
+  expense: Pick<Expense, 'description' | 'value'>; accounts: AccountSummary[]; busy: boolean; error?: string; invoice?: boolean;
   onSubmit: (payload: ExpensePaymentPayload) => void; onCancel: () => void;
 }) {
   const [payload, setPayload] = useState<ExpensePaymentPayload>({ paidFromAccountId: '', paymentDate: localToday(), paymentMethod: '' });
@@ -12,7 +12,7 @@ export function ExpensePaymentForm({ expense, accounts, busy, error, onSubmit, o
   const available = accounts.filter(a => a.accountType === 'CHECKING_ACCOUNT' && a.active !== false);
   function submit(event: FormEvent) {
     event.preventDefault();
-    const message = validateExpensePayment(payload, accounts); setValidation(message);
+    const message = validateExpensePayment(payload, accounts, invoice); setValidation(message);
     if (!message && !busy) onSubmit(payload);
   }
   const inputClass = 'mt-1 w-full rounded-md border border-slate-400 bg-white p-2 text-slate-900 dark:bg-slate-900 dark:text-slate-100';
@@ -25,10 +25,10 @@ export function ExpensePaymentForm({ expense, accounts, busy, error, onSubmit, o
           <option value="">Selecione a conta</option>{available.map(a => <option key={a.accountId} value={a.accountId}>{a.name}</option>)}
         </select></label>
         {!available.length && <p role="alert">Para pagar, cadastre ou ative uma conta corrente.</p>}
-        <label className="block">Data do pagamento<input required type="date" min="0001-01-01" max="9999-12-31" className={inputClass} value={payload.paymentDate} onChange={e => setPayload({ ...payload, paymentDate: e.target.value })} /></label>
-        <label className="block">Forma de pagamento<select required className={inputClass} value={payload.paymentMethod} onChange={e => setPayload({ ...payload, paymentMethod: e.target.value })}>
+        <label className="block">Data do pagamento<input required type="date" min="0001-01-01" max={invoice ? localToday() : "9999-12-31"} className={inputClass} value={payload.paymentDate} onChange={e => setPayload({ ...payload, paymentDate: e.target.value })} /></label>
+        {!invoice && <label className="block">Forma de pagamento<select required className={inputClass} value={payload.paymentMethod} onChange={e => setPayload({ ...payload, paymentMethod: e.target.value })}>
           <option value="">Selecione a forma</option>{Object.entries(paymentMethods).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-        </select></label>
+        </select></label>}
       </fieldset>
       {(validation || error) && <p role="alert" className="text-red-700 dark:text-red-300">{validation || error}</p>}
       <div className="flex gap-3">
