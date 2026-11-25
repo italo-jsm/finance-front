@@ -12,6 +12,7 @@ import { payInvoice } from "@/lib/invoicesApi";
 import type { AccountSummary } from "@/types/account";
 
 type DueDatesSectionProps = {
+  initialPeriod?: DuePeriod;
   accounts: AccountSummary[];
   accountsLoading: boolean;
   accountsError: string;
@@ -20,9 +21,9 @@ type DueDatesSectionProps = {
 };
 
 export function DueDatesSection({
-  accounts, accountsLoading, accountsError, getAccessToken, onRetryAccounts,
+  initialPeriod, accounts, accountsLoading, accountsError, getAccessToken, onRetryAccounts,
 }: DueDatesSectionProps) {
-  const [period, setPeriod] = useState(getCurrentDuePeriod);
+  const [period, setPeriod] = useState(() => initialPeriod ?? getCurrentDuePeriod());
   const [selected, setSelected] = useState<DueItem | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);

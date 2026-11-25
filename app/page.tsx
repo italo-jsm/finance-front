@@ -23,6 +23,7 @@ import { ExpenseModal } from "@/components/ExpenseModal";
 import { ExpenseHistoryTable, type ExpenseHistoryFilters } from "@/components/ExpenseHistoryTable";
 import { buildAccountPayload } from "@/lib/accountForm";
 import { accountsApiUrl, expensesApiUrl } from "@/lib/config";
+import { getCurrentDuePeriod, type DuePeriod } from "@/lib/dueDatesApi";
 
 import { expensePaymentFields } from '@/lib/expensePayment';
 import { useExpensePayment } from '@/hooks/useExpensePayment';
@@ -81,6 +82,8 @@ type ExpenseApiItem = Partial<{
   value: number;
   eventDate: string;
   expenseDate: string;
+  dueDate: string | null;
+  effectiveDueDate: string | null;
   date: string;
   category: Expense["category"];
   accountId: string;
@@ -255,6 +258,8 @@ function normalizeExpense(apiExpense: ExpenseApiItem, accounts: AccountSummary[]
   return {
     expenseId: apiExpense.expenseId ?? apiExpense.id,
     date: apiExpense.expenseDate ?? apiExpense.eventDate ?? apiExpense.date ?? "",
+    dueDate: apiExpense.dueDate,
+    effectiveDueDate: apiExpense.effectiveDueDate,
     description: apiExpense.description ?? "",
     value: typeof amount === "number" ? amount : Number(amount) || 0,
     category: apiExpense.category ?? "OTHER",
@@ -270,6 +275,7 @@ function buildExpensePayload(expense: Expense) {
     description: expense.description.trim(),
     amount: expense.value,
     eventDate: expense.date,
+    ...(expense.dueDate ? { dueDate: expense.dueDate } : {}),
     category: expense.category,
     accountId: expense.accountId,
     installments: expense.installments,
@@ -293,6 +299,7 @@ export default function Home() {
   const [expenseSubmitError, setExpenseSubmitError] = useState("");
   const [expenseFieldErrors, setExpenseFieldErrors] = useState<ExpenseFieldErrors>({});
   const [savedExpense, setSavedExpense] = useState<Expense | null>(null);
+  const [savedFixedExpensePeriod, setSavedFixedExpensePeriod] = useState<DuePeriod>();
   const pendingExpense = useRef<AbortController | null>(null);
   const reviewRecent = useRef<HTMLHeadingElement>(null);
   const [expenseReviewDate, setExpenseReviewDate] = useState("");
@@ -530,6 +537,7 @@ export default function Home() {
       setExpenseSubmitError("");
       setExpenseFieldErrors({});
       setSavedExpense(null);
+      setSavedFixedExpensePeriod(undefined);
       setExpenseReviewDate("");
       setRecentFilters(emptyRecentExpenseFilters);
       recentQuery.current = { filters: emptyRecentExpenseFilters, reviewDate: "" };
@@ -799,6 +807,22 @@ export default function Home() {
 
       closeExpenseForm();
       setSavedExpense(expense);
+      if (accounts.some(account => account.accountId === expense.accountId && account.accountType === "FIXED_BILL")) {
+        setSavedFixedExpensePeriod(getCurrentDuePeriod(expense.dueDate ?? expense.date));
+        const defaults = defaultRecentPeriod();
+        const filters = recentQuery.current.filters;
+        const from = filters.dateFrom || defaults.dateFrom;
+        const to = filters.dateTo || defaults.dateTo;
+        if (expense.date < from || expense.date > to) {
+          const nextFilters = {
+            ...filters,
+            dateFrom: expense.date < from ? expense.date : from,
+            dateTo: expense.date > to ? expense.date : to,
+          };
+          recentQuery.current.filters = nextFilters;
+          setRecentFilters(nextFilters);
+        }
+      }
       void refreshRecentExpenses(accessToken);
     } catch {
       if (!isCurrent()) return;
@@ -1142,6 +1166,11 @@ export default function Home() {
                   <>
                     <p className="font-semibold">{savedExpense.expenseId ? "Despesa atualizada" : "Despesa salva"}</p>
                     <p className="break-words">{savedExpense.description} · {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(savedExpense.value)}</p>
+                    {accounts.some(account => account.accountId === savedExpense.accountId && account.accountType === "FIXED_BILL") && (
+                      <button type="button" className="mt-2 min-h-11 font-semibold underline" onClick={() => setActiveMenu("dueDates")}>
+                        Ver vencimentos do mês
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -1189,6 +1218,7 @@ export default function Home() {
 
     if (activeMenu === "dueDates") {
       return <DueDatesSection
+        initialPeriod={savedFixedExpensePeriod}
         accounts={accounts}
         accountsLoading={isLoadingAccounts}
         accountsError={accountsError}

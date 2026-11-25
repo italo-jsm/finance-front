@@ -3,6 +3,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Expense, expenseCategoryOptions } from "../types/expense";
 import { AccountSummary } from "../types/account";
+import { getSuggestedFixedDueDate } from "../lib/dueDatesApi";
 
 export type ExpenseField = "value" | "description" | "accountId" | "date" | "installments" | "paidFromAccountId";
 export type ExpenseFieldErrors = Partial<Record<ExpenseField, string>>;
@@ -52,6 +53,8 @@ export function ExpenseForm({
   const [amount, setAmount] = useState(() => expense.value ? amountFormat.format(expense.value) : "");
   const [detailsOpen, setDetailsOpen] = useState(expense.isPaid || expense.installments > 1);
   const selectedAccount = accounts.find((account) => account.accountId === expense.accountId);
+  const isFixed = selectedAccount?.accountType === "FIXED_BILL";
+  const suggestedDueDate = isFixed ? getSuggestedFixedDueDate(expense.date, selectedAccount.dueDay) : "";
   const isCreditCard = selectedAccount?.accountType === "CREDIT_CARD";
   const paymentAccounts = accounts.filter((account) => account.accountType === "CHECKING_ACCOUNT" && (account.active !== false || account.accountId === expense.paidFromAccountId));
   const isSubmitting = submission === "saving" || submission === "slow";
@@ -102,6 +105,7 @@ export function ExpenseForm({
                 ...expense,
                 accountId: event.target.value,
                 accountName: account?.name ?? "",
+                dueDate: null,
                 installments: account?.accountType === "CREDIT_CARD" ? expense.installments : 1,
               });
             }}>
@@ -116,7 +120,7 @@ export function ExpenseForm({
         </Field>
 
         <div className="grid gap-4 min-[380px]:grid-cols-2">
-          <Field id="expense-date" label="Data" error={fieldErrors.date}>
+          <Field id="expense-date" label={isFixed ? "Data do lançamento" : "Data"} error={fieldErrors.date}>
             <input {...fieldProps("date")} required type="date" value={expense.date} onChange={(event) => setExpense({ ...expense, date: event.target.value })} />
           </Field>
           <Field id="expense-category" label="Categoria (opcional)">
@@ -126,6 +130,22 @@ export function ExpenseForm({
             </select>
           </Field>
         </div>
+
+        {isFixed && (
+          <Field id="expense-dueDate" label="Vencimento">
+            <input id="expense-dueDate" type="date" className={inputClass}
+              value={expense.dueDate ?? (isEditing ? expense.effectiveDueDate : null) ?? suggestedDueDate} disabled={isEditing}
+              onChange={(event) => setExpense({ ...expense, dueDate: event.target.value || null })} />
+            {!isEditing && (expense.dueDate ? (
+              <button type="button" className="mt-1 min-h-11 text-sm font-semibold underline"
+                onClick={() => setExpense({ ...expense, dueDate: null })}>
+                Usar vencimento da conta
+              </button>
+            ) : (
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">Usa o vencimento da conta. Escolha outra data para esta cobrança.</p>
+            ))}
+          </Field>
+        )}
 
         <div className="rounded-lg bg-blue-50 dark:bg-slate-800">
           <button type="button" aria-expanded={detailsOpen || Boolean(fieldErrors.installments || fieldErrors.paidFromAccountId)} aria-controls="expense-payment-details"

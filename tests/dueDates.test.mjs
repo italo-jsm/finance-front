@@ -10,17 +10,19 @@ require.extensions['.ts'] = (module, filename) => module._compile(ts.transpileMo
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
 ).outputText, filename);
 
-const { getCurrentDuePeriod, loadDueItems } = require('../lib/dueDatesApi.ts');
+const { getCurrentDuePeriod, getSuggestedFixedDueDate, loadDueItems } = require('../lib/dueDatesApi.ts');
 const { payInvoice } = require('../lib/invoicesApi.ts');
 
 test('mês inicial inclui o último dia do calendário, inclusive em ano bissexto', () => {
   assert.deepEqual(getCurrentDuePeriod('2028-02-03'), { start: '2028-02-01', end: '2028-02-29' });
+  assert.equal(getSuggestedFixedDueDate('2028-02-03', 31), '2028-02-29');
+  assert.equal(getSuggestedFixedDueDate('2027-02-03', 31), '2027-02-28');
 });
 
 test('combina faturas e cobranças pelas datas de vencimento e calcula pagamentos em centavos', async t => {
   const accounts = [
     { accountId: 'cartao', name: 'Cartão', accountType: 'CREDIT_CARD', dueDay: 2 },
-    { accountId: 'internet', name: 'Internet', accountType: 'FIXED_BILL', dueDay: 31 },
+    { accountId: 'internet', name: 'Internet', accountType: 'FIXED_BILL', dueDay: 5 },
     { accountId: 'ignorada', name: 'Aluguel', accountType: 'FIXED_BILL', dueDay: 15 },
     { accountId: 'corrente', name: 'Corrente', accountType: 'CHECKING_ACCOUNT' },
   ];
@@ -37,18 +39,17 @@ test('combina faturas e cobranças pelas datas de vencimento e calcula pagamento
       return Response.json({ dueDate: `${month}-02`, total: { currentTotal: 51.09 }, paid: true });
     }
 
-    assert.equal(pathname, '/expenses/by-competence');
-    assert.equal(searchParams.get('year'), '2028');
-    assert.equal(Number(searchParams.get('month')), 2);
-    assert.deepEqual(searchParams.getAll('accountId'), ['internet']);
-    return Response.json({ installmentExpenses: [], singleExpenses: [
-      { id: 'a', description: 'Mensalidade', accountId: 'internet', amount: 9.99, totalPaid: 4.15, paymentStatus: 'PARTIALLY_PAID' },
-      { id: 'b', description: 'Estornada', accountId: 'internet', amount: 12, paymentStatus: 'REVERSED' },
-      { id: 'c', description: 'Despesa comum', accountId: 'corrente', amount: 10 },
-    ] });
+    assert.equal(pathname, '/expenses/by-due-date');
+    assert.equal(searchParams.get('beginDate'), '2028-02-29');
+    assert.equal(searchParams.get('endDate'), '2028-03-02');
+    return Response.json([
+      { id: 'a', description: 'Material', accountId: 'internet', amount: 9.99, expenseDate: '2028-01-05', effectiveDueDate: '2028-02-29', totalPaid: 4.15, paymentStatus: 'PARTIALLY_PAID' },
+      { id: 'b', description: 'Estornada', accountId: 'internet', amount: 12, effectiveDueDate: '2028-02-29', paymentStatus: 'REVERSED' },
+      { id: 'c', description: 'Despesa comum', accountId: 'corrente', amount: 10, effectiveDueDate: '2028-02-29' },
+    ]);
   });
   assert.deepEqual(await loadDueItems(accounts, { start: '2028-02-29', end: '2028-03-02' }, 'token', signal), [
-    { id: 'a', name: 'Mensalidade', accountName: 'Internet', type: 'fixed', due: '2028-02-29', amount: 999, paid: 415 },
+    { id: 'a', name: 'Material', accountName: 'Internet', type: 'fixed', due: '2028-02-29', amount: 999, paid: 415 },
     { id: 'cartao:2028-03', name: 'Cartão', type: 'card', due: '2028-03-02', amount: 5109, paid: 5109 },
   ]);
   assert.deepEqual(queries.sort(), ['2028-02', '2028-03']);
@@ -66,11 +67,11 @@ test('mantém a competência original da fatura e o ID da despesa para registrar
     if (pathname === '/invoices') {
       return Response.json({ dueDate: '2028-03-02', total: { currentTotal: 50 } });
     }
-    assert.equal(pathname, '/expenses/by-competence');
-    return Response.json({ installmentExpenses: [
-      { id: 'parcela', accountId: 'conta-fixa', amount: 20, canPay: true },
-      { id: 'parcial', accountId: 'conta-fixa', amount: 30, totalPaid: 10, canPay: false },
-    ], singleExpenses: [] });
+    assert.equal(pathname, '/expenses/by-due-date');
+    return Response.json([
+      { id: 'parcela', accountId: 'conta-fixa', effectiveDueDate: '2028-03-02', amount: 20, canPay: true },
+      { id: 'parcial', accountId: 'conta-fixa', effectiveDueDate: '2028-03-02', amount: 30, totalPaid: 10, canPay: false },
+    ]);
   });
   const items = await loadDueItems([
     { accountId: 'cartao', name: 'Cartão', accountType: 'CREDIT_CARD' },

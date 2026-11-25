@@ -21,6 +21,7 @@ type FixedExpense = {
   description: string;
   accountId: string;
   amount: number;
+  effectiveDueDate: string;
   totalPaid?: number;
   canPay?: boolean;
   paymentStatus?: Expense["paymentStatus"];
@@ -51,6 +52,13 @@ export function getCurrentDuePeriod(today = getLocalDate()): DuePeriod {
   return { start: `${month}-01`, end: lastDayOfMonth(month) };
 }
 
+export function getSuggestedFixedDueDate(expenseDate: string, dueDay?: number | null): string {
+  if (!expenseDate || !dueDay || dueDay < 1 || dueDay > 31) return "";
+  const month = expenseDate.slice(0, -3);
+  const lastDay = Number(lastDayOfMonth(month).slice(-2));
+  return `${month}-${String(Math.min(dueDay, lastDay)).padStart(2, "0")}`;
+}
+
 const toCents = (value: number) => Math.round(value * 100);
 
 export async function loadDueItems(
@@ -61,43 +69,29 @@ export async function loadDueItems(
   const contains = (date: string) => date >= period.start && date <= period.end;
   const jobs: Array<() => Promise<DueItem[]>> = [];
 
-  for (const month of monthsBetween(period)) {
-    const lastDay = Number(lastDayOfMonth(month).slice(-2));
-    const dueDates = new Map<string, { due: string; name: string }>();
-
-    for (const account of fixed) {
-      if (!account.dueDay || account.dueDay < 1 || account.dueDay > 31) {
-        throw new Error("Conta fixa sem dia de vencimento válido.");
-      }
-      const day = String(Math.min(account.dueDay, lastDay)).padStart(2, "0");
-      const due = `${month}-${day}`;
-      if (contains(due)) dueDates.set(account.accountId, { due, name: account.name });
-    }
-
-    if (dueDates.size) jobs.push(async () => {
-      const [year, number] = month.split("-");
-      const query = new URLSearchParams({ year, month: number });
-      for (const id of dueDates.keys()) query.append("accountId", id);
-      const response = await fetch(`${expensesApiUrl}/by-competence?${query}`, {
-        cache: "no-store", signal, headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) throw new Error("Não foi possível carregar as contas fixas.");
-      const { singleExpenses, installmentExpenses }: {
-        singleExpenses: FixedExpense[]; installmentExpenses: FixedExpense[];
-      } = await response.json();
-      return [...singleExpenses, ...installmentExpenses].flatMap(expense => {
-        const account = dueDates.get(expense.accountId);
-        const amount = toCents(expense.amount);
-        if (!account || expense.reversedDate || expense.paymentStatus === "REVERSED" || amount <= 0) return [];
-        const paid = expense.paymentStatus === "PAID" ? amount :
-          Math.min(amount, Math.max(0, toCents(expense.totalPaid ?? expense.payment?.amount ?? 0)));
-        return [{ id: expense.id, name: expense.description || account.name, accountName: account.name,
-          type: "fixed", due: account.due, amount, paid,
-          ...(expense.canPay === true && paid < amount ? { paymentTarget: { type: "fixed", expenseId: expense.id } } : {}),
-        }];
-      });
+  if (fixed.length) jobs.push(async () => {
+    const accountsById = new Map(fixed.map(account => [account.accountId, account]));
+    const query = new URLSearchParams({ beginDate: period.start, endDate: period.end });
+    const response = await fetch(`${expensesApiUrl}/by-due-date?${query}`, {
+      cache: "no-store", signal, headers: { Authorization: `Bearer ${token}` },
     });
+    if (!response.ok) throw new Error("Não foi possível carregar as contas fixas.");
+    const expenses: FixedExpense[] = await response.json();
+    return expenses.flatMap(expense => {
+      const account = accountsById.get(expense.accountId);
+      const due = expense.effectiveDueDate;
+      const amount = toCents(expense.amount);
+      if (!account || !contains(due) || expense.reversedDate || expense.paymentStatus === "REVERSED" || amount <= 0) return [];
+      const paid = expense.paymentStatus === "PAID" ? amount :
+        Math.min(amount, Math.max(0, toCents(expense.totalPaid ?? expense.payment?.amount ?? 0)));
+      return [{ id: expense.id, name: expense.description || account.name, accountName: account.name,
+        type: "fixed", due, amount, paid,
+        ...(expense.canPay === true && paid < amount ? { paymentTarget: { type: "fixed", expenseId: expense.id } } : {}),
+      }];
+    });
+  });
 
+  for (const month of cards.length ? monthsBetween(period) : []) {
     for (const card of cards) {
       jobs.push(async () => {
         const invoice = await getInvoice(card.accountId, month, token, signal);

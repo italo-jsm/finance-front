@@ -319,3 +319,46 @@ test('nova conta usa o modal e confirma a gravação enquanto a lista atualiza e
   await r.settle();
   r.unmount();
 });
+
+test('salvar conta fixa fora do período inclui a despesa na consulta e abre o mês em Vencimentos', async () => {
+  const previousWindow = global.window;
+  global.window = { setTimeout, clearTimeout };
+  const fixed = { accountId: 'f', name: 'Luz', accountType: 'FIXED_BILL', dueDay: 15 };
+  let saved = false;
+  global.fetch = async (url, options) => {
+    if (options?.method === 'POST') {
+      assert.equal(JSON.parse(options.body).dueDate, '2026-12-10');
+      assert.equal(JSON.parse(options.body).eventDate, bill.expenseDate);
+      saved = true;
+      return new Response(null, { status: 201 });
+    }
+    if (url.endsWith('/accounts')) return Response.json([fixed]);
+    const query = new URL(url).searchParams;
+    const includesDate = query.get('beginDate') <= bill.expenseDate && query.get('endDate') >= bill.expenseDate;
+    return Response.json({ expenses: saved && includesDate ? [bill] : [] });
+  };
+
+  try {
+    const r = runtime();
+    await r.settle();
+    r.menu('transactions');
+    await r.settle();
+    const filters = { ...r.props('ExpenseList').filters, dateFrom: '2026-11-01', dateTo: '2026-11-07' };
+    r.props('ExpenseList').onApplyFilters(filters);
+    r.props('ExpenseList').onNewExpense();
+    r.render();
+    const form = r.props('ExpenseForm');
+    form.setExpense({ ...form.expense, date: bill.expenseDate, dueDate: '2026-12-10', description: bill.description, value: bill.amount, accountId: fixed.accountId });
+    r.render();
+    await r.props('ExpenseForm').onSubmit({ preventDefault() {} });
+    await r.settle();
+
+    assert.deepEqual(r.props('ExpenseList').expenses.map(expense => expense.expenseId), [bill.id]);
+    assert.deepEqual(r.props('ExpenseList').filters, { ...filters, dateFrom: bill.expenseDate });
+    r.menu('dueDates');
+    assert.deepEqual(r.props('DueDatesSection').initialPeriod, { start: '2026-12-01', end: '2026-12-31' });
+    r.unmount();
+  } finally {
+    global.window = previousWindow;
+  }
+});

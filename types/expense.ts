@@ -16,6 +16,8 @@ export type ExpenseCategory =
 export type Expense = {
   expenseId?: string;
   date: string;
+  dueDate?: string | null;
+  effectiveDueDate?: string | null;
   description: string;
   value: number;
   category: ExpenseCategory;
